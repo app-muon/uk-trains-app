@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Train body: passenger section + sloped cab nose pointing right -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 18,36 L 74,36 L 88,50 L 88,63 L 18,63 Z" />
+
+    <!-- Passenger windows (navy, creates cutout appearance) -->
+    <path
+        android:fillColor="#003D7C"
+        android:pathData="M 23,40 L 71,40 L 71,54 L 23,54 Z" />
+
+    <!-- Cab window on sloped front section -->
+    <path
+        android:fillColor="#003D7C"
+        android:pathData="M 76,41 L 83,49 L 83,58 L 76,58 Z" />
+
+    <!-- Left bogie wheels -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 22,71 A 5,5 0 1,0 32,71 A 5,5 0 1,0 22,71 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 36,71 A 5,5 0 1,0 46,71 A 5,5 0 1,0 36,71 Z" />
+
+    <!-- Right bogie wheels -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 57,71 A 5,5 0 1,0 67,71 A 5,5 0 1,0 57,71 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 71,71 A 5,5 0 1,0 81,71 A 5,5 0 1,0 71,71 Z" />
+
+    <!-- Rail track -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:pathData="M 12,79 L 96,79" />
+
+</vector>
