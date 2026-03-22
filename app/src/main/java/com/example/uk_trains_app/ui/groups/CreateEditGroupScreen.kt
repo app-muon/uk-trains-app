@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
@@ -55,7 +55,7 @@ fun CreateEditGroupScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    var destinationTarget by remember { mutableStateOf<StationEntry?>(null) }
+    var destinationTargetIndex by remember { mutableStateOf<Int?>(null) }
 
     var wantsView by remember { mutableStateOf(false) }
 
@@ -90,16 +90,21 @@ fun CreateEditGroupScreen(
         )
     }
 
-    destinationTarget?.let { entry ->
-        DestinationSearchDialog(
-            stationName = entry.stationName,
-            onSearch = viewModel::searchDestinations,
-            onSelect = { station ->
-                viewModel.setDestination(entry, station)
-                destinationTarget = null
-            },
-            onDismiss = { destinationTarget = null }
-        )
+    destinationTargetIndex?.let { index ->
+        val entry = uiState.stations.getOrNull(index)
+        if (entry != null) {
+            DestinationSearchDialog(
+                stationName = entry.stationName,
+                onSearch = viewModel::searchDestinations,
+                onSelect = { station ->
+                    viewModel.setDestination(index, station)
+                    destinationTargetIndex = null
+                },
+                onDismiss = { destinationTargetIndex = null }
+            )
+        } else {
+            destinationTargetIndex = null
+        }
     }
 
     Scaffold(
@@ -160,7 +165,16 @@ fun CreateEditGroupScreen(
                 )
             }
 
-            if (uiState.stations.isNotEmpty()) {
+            if (uiState.stations.isEmpty()) {
+                item {
+                    Text(
+                        "Add the stations you depart from. You can then set an optional destination filter on each one.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            } else {
                 item {
                     Text(
                         "Stations (${uiState.stations.size})",
@@ -170,12 +184,12 @@ fun CreateEditGroupScreen(
                 }
             }
 
-            items(uiState.stations, key = { it.crsCode }) { station ->
+            itemsIndexed(uiState.stations, key = { index, s -> "$index-${s.crsCode}-${s.filterCrs}" }) { index, station ->
                 StationRow(
                     station = station,
-                    onRemove = { viewModel.removeStation(station) },
-                    onSetDestination = { destinationTarget = station },
-                    onClearDestination = { viewModel.clearDestination(station) }
+                    onRemove = { viewModel.removeStation(index) },
+                    onSetDestination = { destinationTargetIndex = index },
+                    onClearDestination = { viewModel.clearDestination(index) }
                 )
             }
 

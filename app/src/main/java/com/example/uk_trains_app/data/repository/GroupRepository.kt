@@ -2,6 +2,7 @@ package com.example.uk_trains_app.data.repository
 
 import androidx.room.withTransaction
 import com.example.uk_trains_app.data.db.AppDatabase
+import com.example.uk_trains_app.data.db.CachedDepartureDao
 import com.example.uk_trains_app.data.db.GroupDao
 import com.example.uk_trains_app.data.db.StationEntryDao
 import com.example.uk_trains_app.data.model.Group
@@ -15,7 +16,8 @@ import javax.inject.Singleton
 class GroupRepository @Inject constructor(
     private val db: AppDatabase,
     private val groupDao: GroupDao,
-    private val stationEntryDao: StationEntryDao
+    private val stationEntryDao: StationEntryDao,
+    private val cachedDepartureDao: CachedDepartureDao
 ) {
     fun observeGroupsWithCount(): Flow<List<GroupWithCount>> =
         groupDao.observeGroupsWithCount()
@@ -37,6 +39,7 @@ class GroupRepository @Inject constructor(
 
     suspend fun deleteGroup(id: Long) {
         val group = groupDao.getById(id) ?: return
+        cachedDepartureDao.deleteByGroup(id)
         groupDao.delete(group)
     }
 

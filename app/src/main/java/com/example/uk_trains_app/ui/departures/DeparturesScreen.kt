@@ -101,8 +101,25 @@ fun DeparturesScreen(
                 .padding(innerPadding),
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
+            // Offline / cached data warning
+            if (uiState.hasAnyFromCache) {
+                item {
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Offline — showing cached data",
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+
             // Stale data warning
-            if (isStale) {
+            if (isStale && !uiState.hasAnyFromCache) {
                 item {
                     Surface(
                         color = MaterialTheme.colorScheme.errorContainer,

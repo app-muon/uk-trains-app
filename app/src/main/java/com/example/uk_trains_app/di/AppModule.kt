@@ -3,6 +3,7 @@ package com.example.uk_trains_app.di
 import android.content.Context
 import androidx.room.Room
 import com.example.uk_trains_app.data.db.AppDatabase
+import com.example.uk_trains_app.data.db.CachedDepartureDao
 import com.example.uk_trains_app.data.db.GroupDao
 import com.example.uk_trains_app.data.db.StationEntryDao
 import dagger.Module
@@ -22,7 +23,7 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "trains_db")
-            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
             .build()
 
     @Provides
@@ -30,6 +31,9 @@ object AppModule {
 
     @Provides
     fun provideStationEntryDao(db: AppDatabase): StationEntryDao = db.stationEntryDao()
+
+    @Provides
+    fun provideCachedDepartureDao(db: AppDatabase): CachedDepartureDao = db.cachedDepartureDao()
 
     @Provides
     @Singleton

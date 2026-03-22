@@ -268,7 +268,9 @@ class DarwinSoapClient @Inject constructor(
     private fun parseXml(xml: String) =
         DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = true
-        }.newDocumentBuilder().parse(InputSource(StringReader(xml)))
+        }.newDocumentBuilder().parse(InputSource(StringReader(
+            xml.replace(Regex("<!DOCTYPE[^>]*>"), "")
+        )))
 
     private fun Element.elementsByLocalName(name: String): List<Element> {
         val result = mutableListOf<Element>()

@@ -76,7 +76,6 @@ class CreateEditGroupViewModel @Inject constructor(
 
     fun addStation(station: Station) {
         _uiState.update {
-            if (it.stations.any { s -> s.crsCode == station.crs }) return@update it
             val newEntry = StationEntry(
                 groupId = groupId ?: 0L,
                 stationName = station.name,
@@ -91,26 +90,28 @@ class CreateEditGroupViewModel @Inject constructor(
         }
     }
 
-    fun setDestination(entry: StationEntry, destination: Station) {
+    fun setDestination(index: Int, destination: Station) {
         _uiState.update {
-            it.copy(stations = it.stations.map { s ->
-                if (s.crsCode == entry.crsCode) s.copy(filterCrs = destination.crs, filterName = destination.name)
+            it.copy(stations = it.stations.mapIndexed { i, s ->
+                if (i == index) s.copy(filterCrs = destination.crs, filterName = destination.name)
                 else s
             })
         }
     }
 
-    fun clearDestination(entry: StationEntry) {
+    fun clearDestination(index: Int) {
         _uiState.update {
-            it.copy(stations = it.stations.map { s ->
-                if (s.crsCode == entry.crsCode) s.copy(filterCrs = null, filterName = null)
+            it.copy(stations = it.stations.mapIndexed { i, s ->
+                if (i == index) s.copy(filterCrs = null, filterName = null)
                 else s
             })
         }
     }
 
-    fun removeStation(entry: StationEntry) {
-        _uiState.update { it.copy(stations = it.stations.filter { s -> s != entry }) }
+    fun removeStation(index: Int) {
+        _uiState.update {
+            it.copy(stations = it.stations.filterIndexed { i, _ -> i != index })
+        }
     }
 
     fun deleteGroup() {

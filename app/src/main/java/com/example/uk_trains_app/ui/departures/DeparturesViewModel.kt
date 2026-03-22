@@ -24,7 +24,8 @@ data class StationSection(
     val filterCrs: String? = null,
     val filterName: String? = null,
     val departures: List<Departure>,
-    val messages: List<String> = emptyList()
+    val messages: List<String> = emptyList(),
+    val fromCache: Boolean = false
 ) {
     val headerText: String
         get() = if (filterName != null) "$stationName \u2192 $filterName" else stationName
@@ -39,7 +40,8 @@ data class DeparturesUiState(
     val isLoadingMore: Boolean = false,
     val sections: List<StationSection> = emptyList(),
     val stationErrors: List<String> = emptyList(),
-    val lastFetchedAt: Long? = null
+    val lastFetchedAt: Long? = null,
+    val hasAnyFromCache: Boolean = false
 )
 
 @HiltViewModel
@@ -68,13 +70,20 @@ class DeparturesViewModel @Inject constructor(
         activeJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, stationErrors = emptyList(), sections = emptyList()) }
             val stations = groupRepository.getStations(groupId)
-            val results = departuresRepository.fetchAll(stations, timeOffset = 0)
+            val results = departuresRepository.fetchAll(stations, groupId, timeOffset = 0)
+            val sections = buildSections(stations, results)
+            val anyFromCache = sections.any { it.fromCache }
             _uiState.update {
                 it.copy(
                     isLoading = false,
-                    sections = buildSections(stations, results),
+                    sections = sections,
                     stationErrors = buildErrors(results),
-                    lastFetchedAt = System.currentTimeMillis()
+                    lastFetchedAt = if (anyFromCache) {
+                        departuresRepository.getCachedTimestamp(groupId) ?: System.currentTimeMillis()
+                    } else {
+                        System.currentTimeMillis()
+                    },
+                    hasAnyFromCache = anyFromCache
                 )
             }
         }
@@ -86,7 +95,7 @@ class DeparturesViewModel @Inject constructor(
         activeJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoadingMore = true) }
             val stations = groupRepository.getStations(groupId)
-            val results = departuresRepository.fetchAll(stations, timeOffset = offset)
+            val results = departuresRepository.fetchAll(stations, groupId, timeOffset = offset)
             _uiState.update {
                 it.copy(
                     isLoadingMore = false,
@@ -123,7 +132,7 @@ class DeparturesViewModel @Inject constructor(
     private fun buildSections(stations: List<StationEntry>, results: List<StationResult>): List<StationSection> =
         stations.zip(results).mapNotNull { (station, result) ->
             (result as? StationResult.Success)?.let {
-                StationSection(station.stationName, station.crsCode, station.filterCrs, station.filterName, it.departures, it.messages)
+                StationSection(station.stationName, station.crsCode, station.filterCrs, station.filterName, it.departures, it.messages, it.fromCache)
             }
         }
 
