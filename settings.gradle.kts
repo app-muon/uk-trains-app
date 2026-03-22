@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "uk-trains-app"
+rootProject.name = "transport-app"
 include(":app")
  

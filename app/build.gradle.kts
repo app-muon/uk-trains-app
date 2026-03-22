@@ -14,13 +14,13 @@ val darwinApiKey: String = localProps.getProperty("DARWIN_API_KEY", "")
 val tflApiKey: String = localProps.getProperty("TFL_API_KEY", "")
 
 android {
-    namespace = "com.example.uk_trains_app"
+    namespace = "com.example.transport_app"
     compileSdk {
         version = release(36)
     }
 
     defaultConfig {
-        applicationId = "com.example.uk_trains_app"
+        applicationId = "com.example.transport_app"
         minSdk = 24
         targetSdk = 36
         versionCode = 1

@@ -75,7 +75,7 @@ Both keys are read at build time and injected into `BuildConfig`. The `local.pro
 The app follows **MVVM** with **Hilt** dependency injection:
 
 ```
-app/src/main/java/com/example/uk_trains_app/
+app/src/main/java/com/example/transport_app/
 ├── data/
 │   ├── db/           # Room database, DAOs, migrations
 │   ├── model/        # Data classes (Group, StationEntry, Departure, BusStopArrival, etc.)
