@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +16,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.DirectionsBus
+import androidx.compose.material.icons.outlined.Train
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -33,24 +38,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.uk_trains_app.data.model.Departure
+import com.example.uk_trains_app.data.model.TransportType
+import com.example.uk_trains_app.ui.theme.BusHeaderBg
+import com.example.uk_trains_app.ui.theme.BusHeaderFg
+import com.example.uk_trains_app.ui.theme.StatusGreen
+import com.example.uk_trains_app.ui.theme.StatusOrange
+import com.example.uk_trains_app.ui.theme.TrainHeaderBg
+import com.example.uk_trains_app.ui.theme.TrainHeaderFg
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-private val GreenOk = Color(0xFF2E7D32)
-private val OrangeWarning = Color(0xFFE65100)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeparturesScreen(
     onBack: () -> Unit,
     onServiceClick: (serviceId: String) -> Unit,
+    onBusClick: (vehicleId: String) -> Unit = {},
     viewModel: DeparturesViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -177,7 +186,7 @@ fun DeparturesScreen(
             // Station sections
             uiState.sections.forEach { section ->
                 item {
-                    StationHeader(section.headerText)
+                    StationHeader(section.headerText, section.type)
                 }
                 if (section.messages.isNotEmpty()) {
                     items(section.messages) { msg ->
@@ -189,17 +198,27 @@ fun DeparturesScreen(
                         )
                     }
                 }
-                item {
-                    DepartureHeader()
-                }
-                items(section.departures) { departure ->
-                    DepartureRow(departure, onClick = { onServiceClick(departure.serviceId) })
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                if (section.type == TransportType.BUS) {
+                    item { BusDepartureHeader() }
+                    items(section.departures) { departure ->
+                        val hasRealVehicleId = !departure.serviceId.contains("-")
+                        BusDepartureRow(
+                            departure,
+                            onClick = if (hasRealVehicleId) {{ onBusClick(departure.serviceId) }} else null
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+                } else {
+                    item { DepartureHeader() }
+                    items(section.departures) { departure ->
+                        DepartureRow(departure, onClick = { onServiceClick(departure.serviceId) })
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    }
                 }
             }
 
-            // More times button
-            if (uiState.sections.isNotEmpty()) {
+            // More times button (only for train sections — bus arrivals don't support time offset)
+            if (uiState.sections.any { it.type == TransportType.TRAIN }) {
                 item {
                     Box(
                         modifier = Modifier
@@ -222,18 +241,21 @@ fun DeparturesScreen(
 }
 
 @Composable
-private fun StationHeader(name: String) {
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(
-            name,
+private fun StationHeader(name: String, type: String) {
+    val isBus = type == TransportType.BUS
+    val bg = if (isBus) BusHeaderBg else TrainHeaderBg
+    val fg = if (isBus) BusHeaderFg else TrainHeaderFg
+    val icon = if (isBus) Icons.Outlined.DirectionsBus else Icons.Outlined.Train
+
+    Surface(color = bg, modifier = Modifier.fillMaxWidth()) {
+        Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSecondaryContainer
-        )
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = fg)
+            Spacer(Modifier.width(8.dp))
+            Text(name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = fg)
+        }
     }
 }
 
@@ -257,12 +279,59 @@ private fun DepartureHeader() {
 }
 
 @Composable
+private fun BusDepartureHeader() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text("Route", style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.weight(0.15f), fontWeight = FontWeight.Bold)
+        Text("Destination", style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.weight(0.55f), fontWeight = FontWeight.Bold)
+        Text("Due", style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.weight(0.3f), fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun BusDepartureRow(departure: Departure, onClick: (() -> Unit)?) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            departure.routeNumber ?: "",
+            modifier = Modifier.weight(0.15f),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            departure.destination,
+            modifier = Modifier.weight(0.55f),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            departure.estimatedTime,
+            modifier = Modifier.weight(0.3f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (departure.estimatedTime == "Due") StatusGreen else StatusOrange
+        )
+    }
+}
+
+@Composable
 private fun DepartureRow(departure: Departure, onClick: () -> Unit) {
     val statusColor = when {
         departure.isCancelled -> MaterialTheme.colorScheme.error
-        departure.estimatedTime == "On time" -> GreenOk
+        departure.estimatedTime == "On time" -> StatusGreen
         departure.estimatedTime == "Delayed" -> MaterialTheme.colorScheme.error
-        else -> OrangeWarning
+        else -> StatusOrange
     }
     val statusText = when {
         departure.isCancelled -> "Cancelled"

@@ -11,6 +11,7 @@ val localProps = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
 val darwinApiKey: String = localProps.getProperty("DARWIN_API_KEY", "")
+val tflApiKey: String = localProps.getProperty("TFL_API_KEY", "")
 
 android {
     namespace = "com.example.uk_trains_app"
@@ -27,6 +28,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "DARWIN_API_KEY", "\"$darwinApiKey\"")
+        buildConfigField("String", "TFL_API_KEY", "\"$tflApiKey\"")
     }
 
     buildTypes {

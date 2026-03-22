@@ -17,7 +17,9 @@ data class CachedDeparture(
     val originCrs: String,
     val originName: String,
     val serviceId: String,
-    val cachedAt: Long
+    val cachedAt: Long,
+    val type: String = TransportType.TRAIN,
+    val routeNumber: String? = null
 ) {
     fun toDeparture() = Departure(
         scheduledTime = scheduledTime,
@@ -27,7 +29,9 @@ data class CachedDeparture(
         isCancelled = isCancelled,
         originCrs = originCrs,
         originName = originName,
-        serviceId = serviceId
+        serviceId = serviceId,
+        routeNumber = routeNumber,
+        type = type
     )
 
     companion object {
@@ -44,7 +48,9 @@ data class CachedDeparture(
                 originCrs = departure.originCrs,
                 originName = departure.originName,
                 serviceId = departure.serviceId,
-                cachedAt = cachedAt
+                cachedAt = cachedAt,
+                type = departure.type,
+                routeNumber = departure.routeNumber
             )
     }
 }

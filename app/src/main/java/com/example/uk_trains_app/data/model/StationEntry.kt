@@ -24,5 +24,6 @@ data class StationEntry(
     val crsCode: String,
     val displayOrder: Int = 0,
     val filterCrs: String? = null,
-    val filterName: String? = null
+    val filterName: String? = null,
+    val type: String = TransportType.TRAIN
 )

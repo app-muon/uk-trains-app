@@ -6,6 +6,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.uk_trains_app.ui.departures.BusDetailScreen
 import com.example.uk_trains_app.ui.departures.DeparturesScreen
 import com.example.uk_trains_app.ui.departures.ServiceDetailScreen
 import com.example.uk_trains_app.ui.groups.CreateEditGroupScreen
@@ -58,6 +59,10 @@ fun AppNavigation() {
                 onServiceClick = { serviceId ->
                     val encoded = URLEncoder.encode(serviceId, "UTF-8")
                     navController.navigate("service_detail/$encoded")
+                },
+                onBusClick = { vehicleId ->
+                    val encoded = URLEncoder.encode(vehicleId, "UTF-8")
+                    navController.navigate("bus_detail/$encoded")
                 }
             )
         }
@@ -67,6 +72,15 @@ fun AppNavigation() {
             arguments = listOf(navArgument("serviceId") { type = NavType.StringType })
         ) {
             ServiceDetailScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = "bus_detail/{vehicleId}",
+            arguments = listOf(navArgument("vehicleId") { type = NavType.StringType })
+        ) {
+            BusDetailScreen(
                 onBack = { navController.popBackStack() }
             )
         }

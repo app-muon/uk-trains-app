@@ -83,12 +83,12 @@ fun GroupsListScreen(
                     )
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        "Welcome to Trains",
+                        "Welcome to Transport",
                         style = MaterialTheme.typography.titleLarge
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "A board shows live departures from stations you choose. You can filter each station to only show trains to a specific destination.",
+                        "A board shows live departures from train stations and London bus stops. You can filter trains by destination or buses by route.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center

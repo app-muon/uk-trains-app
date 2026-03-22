@@ -27,15 +27,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.uk_trains_app.data.model.CallingPoint
 import com.example.uk_trains_app.data.model.ServiceDetail
-
-private val GreenOk = Color(0xFF2E7D32)
-private val OrangeWarning = Color(0xFFE65100)
+import com.example.uk_trains_app.ui.theme.StatusGreen
+import com.example.uk_trains_app.ui.theme.StatusOrange
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,7 +97,7 @@ private fun ServiceDetailContent(detail: ServiceDetail, modifier: Modifier = Mod
                     Text(detail.cancelReason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
                 if (detail.delayReason != null) {
-                    Text(detail.delayReason, style = MaterialTheme.typography.bodySmall, color = OrangeWarning)
+                    Text(detail.delayReason, style = MaterialTheme.typography.bodySmall, color = StatusOrange)
                 }
             }
         }
@@ -170,9 +168,9 @@ private fun CallingPointRow(cp: CallingPoint) {
     val timeText = cp.actualTime ?: cp.estimatedTime ?: ""
     val timeColor = when {
         cp.isCancelled -> MaterialTheme.colorScheme.error
-        cp.actualTime != null -> GreenOk
-        cp.estimatedTime == "On time" -> GreenOk
-        cp.estimatedTime != null -> OrangeWarning
+        cp.actualTime != null -> StatusGreen
+        cp.estimatedTime == "On time" -> StatusGreen
+        cp.estimatedTime != null -> StatusOrange
         else -> MaterialTheme.colorScheme.onSurface
     }
     val displayTime = when {

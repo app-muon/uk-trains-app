@@ -10,7 +10,7 @@ import com.example.uk_trains_app.data.model.StationEntry
 
 @Database(
     entities = [Group::class, StationEntry::class, CachedDeparture::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -45,6 +45,13 @@ abstract class AppDatabase : RoomDatabase() {
                         cachedAt INTEGER NOT NULL
                     )
                 """)
+            }
+        }
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE station_entries ADD COLUMN type TEXT NOT NULL DEFAULT 'train'")
+                db.execSQL("ALTER TABLE cached_departures ADD COLUMN type TEXT NOT NULL DEFAULT 'train'")
+                db.execSQL("ALTER TABLE cached_departures ADD COLUMN routeNumber TEXT DEFAULT NULL")
             }
         }
     }

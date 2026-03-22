@@ -29,6 +29,9 @@ interface CachedDepartureDao {
     @Query("DELETE FROM cached_departures WHERE groupId = :groupId")
     suspend fun deleteByGroup(groupId: Long)
 
+    @Query("DELETE FROM cached_departures WHERE cachedAt < :cutoff")
+    suspend fun deleteOlderThan(cutoff: Long)
+
     @Transaction
     suspend fun replaceForStation(groupId: Long, crsCode: String, filterCrs: String?, departures: List<CachedDeparture>) {
         deleteByStation(groupId, crsCode, filterCrs)

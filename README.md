@@ -1,23 +1,28 @@
-# UK Trains App
+# UK Transport App
 
-A real-time UK train departures app for Android, powered by the National Rail Darwin OpenLDBWS API. Create custom departure boards with multiple stations, optional destination filters, and view live service details including calling points.
+A real-time UK transport departures app for Android. View live train departures via the National Rail Darwin API and London bus arrivals via the TfL API. Create custom departure boards combining train stations and bus stops, with optional destination/route filtering and live service details.
 
 ## Features
 
-- **Custom Departure Boards** — Group multiple stations into named boards for quick access
-- **Optional Destination Filtering** — Filter each station's departures to only show trains heading to a specific destination
-- **Live Departure Data** — Real-time scheduled/estimated times, platform numbers, and cancellation status
-- **Service Details** — Tap any departure to see the full journey: previous stops, current station, and upcoming calling points with actual/estimated arrival times
-- **Station Alerts** — Disruption messages from National Rail (e.g. lift closures, replacement buses) shown under each station header
-- **Load More** — Paginate to see later departures beyond the initial results
+- **Custom Departure Boards** — Group multiple train stations and bus stops into named boards for quick access
+- **Train Departures** — Real-time scheduled/estimated times, platform numbers, and cancellation status from National Rail
+- **Bus Arrivals** — Live London bus arrival predictions from TfL, with route numbers and countdown times
+- **Destination & Route Filtering** — Filter train departures by destination station, or bus arrivals by route number (with auto-suggested routes from TfL)
+- **Service Details** — Tap a train to see the full journey with previous/upcoming calling points; tap a bus to see its upcoming stops
+- **Station Alerts** — Disruption messages from National Rail shown under each station header
+- **Load More** — Paginate to see later train departures beyond the initial results
+- **Offline Cache** — Cached departures shown when offline, with stale data warnings
+- **Colour-coded Headers** — Train sections shown in blue, bus sections in red, each with a transport icon
 
 ## Screenshots
 
-The app has three main screens:
+The app has five main screens:
 
 1. **My Boards** — List of your saved departure boards
-2. **Departures** — Live departures grouped by station, with status colours (green = on time, orange = delayed, red = cancelled)
-3. **Service Detail** — Full calling point list for a selected train
+2. **Create/Edit Board** — Add train stations or bus stops, set destination/route filters
+3. **Departures** — Live departures grouped by station/stop, with status colours (green = on time, orange = delayed, red = cancelled)
+4. **Train Service Detail** — Full calling point list for a selected train
+5. **Bus Detail** — Upcoming stops for a selected bus
 
 ## Getting Started
 
@@ -26,32 +31,41 @@ The app has three main screens:
 - Android Studio (Arctic Fox or later)
 - Android SDK 36 (compileSdk)
 - Min SDK 24 (Android 7.0)
-- A National Rail Darwin API key (free)
+- A National Rail Darwin API key (free, required for trains)
+- A TfL API key (optional, for higher bus API rate limits)
 
-### Obtaining a Darwin API Key
+### Obtaining API Keys
 
+**Darwin (trains):**
 1. Go to [National Rail Data Portal](https://realtime.nationalrail.co.uk/OpenLDBWSRegistration/)
-2. Register for an account (it's free)
-3. You will receive an email containing your **API token** (a UUID like `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)
+2. Register for a free account
+3. You will receive an email with your API token
 
-### Configuring the API Key
+**TfL (buses):**
+1. Go to [TfL API Portal](https://api-portal.tfl.gov.uk/)
+2. Register and create an app to get an API key
+3. The TfL API works without a key at reduced rate limits, so this is optional for light use
 
-Add your Darwin API key to the project's `local.properties` file (in the project root directory, same level as `build.gradle.kts`):
+### Configuring API Keys
+
+Add your keys to the project's `local.properties` file (in the project root, same level as `build.gradle.kts`):
 
 ```properties
 # local.properties
 sdk.dir=C\:\\Users\\YourName\\AppData\\Local\\Android\\Sdk
-DARWIN_API_KEY=your-api-key-here
+DARWIN_API_KEY=your-darwin-key-here
+TFL_API_KEY=your-tfl-key-here
 ```
 
-The key is read at build time and injected into `BuildConfig.DARWIN_API_KEY`. The `local.properties` file is excluded from version control via `.gitignore`, so your key stays private.
+Both keys are read at build time and injected into `BuildConfig`. The `local.properties` file is excluded from version control via `.gitignore`.
 
-**Important:** If you skip this step or leave the key empty, the app will build but all departure requests will fail.
+- If `DARWIN_API_KEY` is missing, train departures will fail.
+- If `TFL_API_KEY` is missing or blank, bus features still work at TfL's unauthenticated rate limit.
 
 ### Building and Running
 
 1. Clone the repository
-2. Add your `DARWIN_API_KEY` to `local.properties` as shown above
+2. Add your API keys to `local.properties` as shown above
 3. Open the project in Android Studio
 4. Sync Gradle
 5. Run on a device or emulator (API 24+)
@@ -63,13 +77,13 @@ The app follows **MVVM** with **Hilt** dependency injection:
 ```
 app/src/main/java/com/example/uk_trains_app/
 ├── data/
-│   ├── db/           # Room database, DAOs
-│   ├── model/        # Data classes (Group, StationEntry, Departure, ServiceDetail)
-│   ├── network/      # DarwinSoapClient (SOAP/XML over OkHttp)
-│   └── repository/   # GroupRepository, DeparturesRepository, StationRepository
+│   ├── db/           # Room database, DAOs, migrations
+│   ├── model/        # Data classes (Group, StationEntry, Departure, BusStopArrival, etc.)
+│   ├── network/      # DarwinSoapClient (SOAP/XML), TflApiClient (REST/JSON)
+│   └── repository/   # GroupRepository, DeparturesRepository, StationRepository, BusStopRepository
 ├── di/               # Hilt AppModule
 ├── ui/
-│   ├── departures/   # DeparturesScreen, ServiceDetailScreen + ViewModels
+│   ├── departures/   # DeparturesScreen, ServiceDetailScreen, BusDetailScreen + ViewModels
 │   ├── groups/       # GroupsListScreen, CreateEditGroupScreen + ViewModels
 │   ├── navigation/   # NavHost setup
 │   └── theme/        # Material3 theming
@@ -79,11 +93,13 @@ app/src/main/java/com/example/uk_trains_app/
 
 ### Key Technical Details
 
-- **Darwin API**: Communicates via SOAP 1.1 XML over HTTPS with the OpenLDBWS endpoint (`ldb12.asmx`)
-- **Destination Filtering**: Uses `GetDepBoardWithDetails` with client-side verification of subsequent calling points, ensuring only trains genuinely heading to the destination are shown
-- **Database**: Room with migrations. Station entries support optional `filterCrs`/`filterName` columns for destination filtering
-- **Station Data**: A bundled JSON asset (`stations.json`) provides offline station name/CRS code lookup for search
-- **Rate Limiting**: API requests are chunked (5 concurrent max) with 1-second gaps to stay under the Darwin rate limit
+- **Darwin API**: SOAP 1.1 XML over HTTPS with the OpenLDBWS endpoint (`ldb12.asmx`)
+- **TfL API**: REST/JSON for bus stop search, arrivals, vehicle tracking, and route discovery
+- **Destination Filtering**: Uses `GetDepBoardWithDetails` with client-side verification of subsequent calling points
+- **Bus Stop Groups**: TfL search returns group IDs (490G prefix) which are resolved to child stops for arrivals
+- **Database**: Room with migrations (v1→v4). Supports caching, station types, and route filters
+- **Station Data**: Bundled JSON asset (`stations.json`) for offline train station name/CRS lookup
+- **Rate Limiting**: Darwin requests chunked (5 concurrent max) with 1-second gaps
 
 ## Tech Stack
 
@@ -102,4 +118,4 @@ app/src/main/java/com/example/uk_trains_app/
 
 This project is licensed under the [MIT License](LICENSE).
 
-This project uses the National Rail Darwin Data Feeds. Usage is subject to the [National Rail Data Portal Terms](https://www.nationalrail.co.uk/developers/).
+This project uses the National Rail Darwin Data Feeds and the TfL Unified API. Usage is subject to the [National Rail Data Portal Terms](https://www.nationalrail.co.uk/developers/) and [TfL Terms](https://tfl.gov.uk/corporate/terms-and-conditions/transport-data-service).

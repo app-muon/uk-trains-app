@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.uk_trains_app.data.model.Departure
 import com.example.uk_trains_app.data.model.StationEntry
+import com.example.uk_trains_app.data.model.TransportType
 import com.example.uk_trains_app.data.repository.DeparturesRepository
 import com.example.uk_trains_app.data.repository.GroupRepository
 import com.example.uk_trains_app.data.repository.StationResult
@@ -25,14 +26,26 @@ data class StationSection(
     val filterName: String? = null,
     val departures: List<Departure>,
     val messages: List<String> = emptyList(),
-    val fromCache: Boolean = false
+    val fromCache: Boolean = false,
+    val type: String = TransportType.TRAIN
 ) {
     val headerText: String
-        get() = if (filterName != null) "$stationName \u2192 $filterName" else stationName
+        get() = when {
+            type == TransportType.BUS && filterName != null -> "$stationName \u2014 $filterName"
+            type == TransportType.BUS -> stationName
+            filterName != null -> "$stationName \u2192 $filterName"
+            else -> stationName
+        }
 
     val sectionKey: String
-        get() = if (filterCrs != null) "$crsCode->$filterCrs" else crsCode
+        get() = buildSectionKey(type, crsCode, filterCrs)
 }
+
+private fun buildSectionKey(type: String, crsCode: String, filterCrs: String?): String =
+    if (filterCrs != null) "$type:$crsCode->$filterCrs" else "$type:$crsCode"
+
+private fun stationSectionKey(station: StationEntry): String =
+    buildSectionKey(station.type, station.crsCode, station.filterCrs)
 
 data class DeparturesUiState(
     val groupName: String = "",
@@ -91,15 +104,18 @@ class DeparturesViewModel @Inject constructor(
 
     fun loadMore() {
         if (_uiState.value.isLoadingMore) return
+        activeJob?.cancel()
         val offset = computeNextOffset(_uiState.value.sections)
         activeJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoadingMore = true) }
-            val stations = groupRepository.getStations(groupId)
-            val results = departuresRepository.fetchAll(stations, groupId, timeOffset = offset)
+            // Only fetch more trains — buses don't support time offset pagination
+            val trainStations = groupRepository.getStations(groupId)
+                .filter { it.type == TransportType.TRAIN }
+            val results = departuresRepository.fetchAll(trainStations, groupId, timeOffset = offset)
             _uiState.update {
                 it.copy(
                     isLoadingMore = false,
-                    sections = appendSections(it.sections, stations, results),
+                    sections = appendSections(it.sections, trainStations, results),
                     lastFetchedAt = System.currentTimeMillis()
                 )
             }
@@ -111,7 +127,7 @@ class DeparturesViewModel @Inject constructor(
         val nowMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
 
         var latestMinutes = nowMinutes
-        for (section in sections) {
+        for (section in sections.filter { it.type == TransportType.TRAIN }) {
             for (dep in section.departures) {
                 val parts = dep.scheduledTime.split(":")
                 if (parts.size == 2) {
@@ -132,7 +148,7 @@ class DeparturesViewModel @Inject constructor(
     private fun buildSections(stations: List<StationEntry>, results: List<StationResult>): List<StationSection> =
         stations.zip(results).mapNotNull { (station, result) ->
             (result as? StationResult.Success)?.let {
-                StationSection(station.stationName, station.crsCode, station.filterCrs, station.filterName, it.departures, it.messages, it.fromCache)
+                StationSection(station.stationName, station.crsCode, station.filterCrs, station.filterName, it.departures, it.messages, it.fromCache, station.type)
             }
         }
 
@@ -143,7 +159,7 @@ class DeparturesViewModel @Inject constructor(
     ): List<StationSection> {
         val existingMap = existing.associateBy { it.sectionKey }
         return stations.zip(results).mapNotNull { (station, result) ->
-            val key = if (station.filterCrs != null) "${station.crsCode}->${station.filterCrs}" else station.crsCode
+            val key = stationSectionKey(station)
             val prev = existingMap[key]
             when (result) {
                 is StationResult.Success -> {
@@ -155,7 +171,8 @@ class DeparturesViewModel @Inject constructor(
                         station.filterCrs,
                         station.filterName,
                         (prev?.departures ?: emptyList()) + newDepartures,
-                        result.messages
+                        result.messages,
+                        type = station.type
                     )
                 }
                 is StationResult.Error -> prev
