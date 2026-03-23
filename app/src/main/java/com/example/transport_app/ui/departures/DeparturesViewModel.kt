@@ -113,10 +113,13 @@ class DeparturesViewModel @Inject constructor(
                 .filter { it.type == TransportType.TRAIN }
             val results = departuresRepository.fetchAll(trainStations, groupId, timeOffset = offset)
             _uiState.update {
+                val newSections = appendSections(it.sections, trainStations, results)
+                val anySuccess = results.any { r -> r is StationResult.Success }
                 it.copy(
                     isLoadingMore = false,
-                    sections = appendSections(it.sections, trainStations, results),
-                    lastFetchedAt = System.currentTimeMillis()
+                    sections = newSections,
+                    lastFetchedAt = if (anySuccess) System.currentTimeMillis() else it.lastFetchedAt,
+                    hasAnyFromCache = newSections.any { s -> s.fromCache }
                 )
             }
         }
@@ -133,7 +136,9 @@ class DeparturesViewModel @Inject constructor(
                 if (parts.size == 2) {
                     val h = parts[0].toIntOrNull() ?: continue
                     val m = parts[1].toIntOrNull() ?: continue
-                    val depMinutes = h * 60 + m
+                    var depMinutes = h * 60 + m
+                    // Handle midnight wraparound: if dep appears >12h earlier, it's next-day
+                    if (depMinutes < nowMinutes - 720) depMinutes += 1440
                     if (depMinutes > latestMinutes) {
                         latestMinutes = depMinutes
                     }
@@ -157,27 +162,32 @@ class DeparturesViewModel @Inject constructor(
         stations: List<StationEntry>,
         results: List<StationResult>
     ): List<StationSection> {
+        // Build a map of updated train sections
+        val newSections = mutableMapOf<String, StationSection>()
         val existingMap = existing.associateBy { it.sectionKey }
-        return stations.zip(results).mapNotNull { (station, result) ->
+        stations.zip(results).forEach { (station, result) ->
             val key = stationSectionKey(station)
             val prev = existingMap[key]
             when (result) {
                 is StationResult.Success -> {
                     val existingIds = prev?.departures?.map { it.serviceId }?.toSet() ?: emptySet()
                     val newDepartures = result.departures.filter { it.serviceId !in existingIds }
-                    StationSection(
+                    newSections[key] = StationSection(
                         station.stationName,
                         station.crsCode,
                         station.filterCrs,
                         station.filterName,
                         (prev?.departures ?: emptyList()) + newDepartures,
                         result.messages,
+                        fromCache = (prev?.fromCache ?: false) || result.fromCache,
                         type = station.type
                     )
                 }
-                is StationResult.Error -> prev
+                is StationResult.Error -> if (prev != null) newSections[key] = prev
             }
         }
+        // Preserve original order: replace updated sections in-place, keep others as-is
+        return existing.map { section -> newSections[section.sectionKey] ?: section }
     }
 
     private fun buildErrors(results: List<StationResult>): List<String> =

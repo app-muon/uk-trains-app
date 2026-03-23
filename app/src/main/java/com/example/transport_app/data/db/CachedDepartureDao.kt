@@ -13,11 +13,10 @@ interface CachedDepartureDao {
         SELECT * FROM cached_departures
         WHERE groupId = :groupId AND crsCode = :crsCode
           AND (filterCrs = :filterCrs OR (filterCrs IS NULL AND :filterCrs IS NULL))
-        ORDER BY scheduledTime ASC
     """)
     suspend fun getByStation(groupId: Long, crsCode: String, filterCrs: String?): List<CachedDeparture>
 
-    @Query("SELECT cachedAt FROM cached_departures WHERE groupId = :groupId LIMIT 1")
+    @Query("SELECT MIN(cachedAt) FROM cached_departures WHERE groupId = :groupId")
     suspend fun getCachedTimestamp(groupId: Long): Long?
 
     @Insert

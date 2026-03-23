@@ -7,6 +7,8 @@ import com.example.transport_app.data.model.BusStop
 import com.example.transport_app.data.model.Station
 import com.example.transport_app.data.model.StationEntry
 import com.example.transport_app.data.model.TransportType
+import android.util.Log
+import com.example.transport_app.BuildConfig
 import com.example.transport_app.data.network.TflApiClient
 import com.example.transport_app.data.repository.BusStopRepository
 import com.example.transport_app.data.repository.GroupRepository
@@ -34,7 +36,10 @@ data class CreateEditGroupUiState(
     val canDelete: Boolean = false,
     val isLoading: Boolean = false,
     val availableRoutes: List<String> = emptyList(),
-    val isLoadingRoutes: Boolean = false
+    val isLoadingRoutes: Boolean = false,
+    val directionPickerStop: BusStop? = null,
+    val directionOptions: List<BusStop> = emptyList(),
+    val isLoadingDirections: Boolean = false
 )
 
 @HiltViewModel
@@ -47,6 +52,9 @@ class CreateEditGroupViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val groupId: Long? = savedStateHandle.get<Long>("groupId")
+    companion object {
+        private const val TAG = "CreateEditGroupVM"
+    }
     private var busSearchJob: Job? = null
 
     private val _uiState = MutableStateFlow(CreateEditGroupUiState())
@@ -76,6 +84,7 @@ class CreateEditGroupViewModel @Inject constructor(
     }
 
     fun onSearchModeChange(mode: String) {
+        busSearchJob?.cancel()
         _uiState.update {
             it.copy(
                 searchMode = mode,
@@ -106,8 +115,10 @@ class CreateEditGroupViewModel @Inject constructor(
                 _uiState.update { it.copy(isBusSearching = true) }
                 try {
                     val results = busStopRepository.search(query)
+                    if (BuildConfig.DEBUG) Log.d(TAG, "busSearch: query='$query' -> ${results.size} results: ${results.map { "${it.naptanId} (${it.name})" }}")
                     _uiState.update { it.copy(busSearchResults = results, isBusSearching = false) }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    if (BuildConfig.DEBUG) Log.w(TAG, "busSearch: query='$query' failed: ${e.message}")
                     _uiState.update { it.copy(busSearchResults = emptyList(), isBusSearching = false) }
                 }
             }
@@ -135,11 +146,49 @@ class CreateEditGroupViewModel @Inject constructor(
     }
 
     fun addBusStop(busStop: BusStop) {
+        val isGroup = TflApiClient.isGroupStop(busStop.naptanId)
+        if (BuildConfig.DEBUG) Log.d(TAG, "addBusStop: ${busStop.naptanId} name=${busStop.name} isGroup=$isGroup")
+        if (isGroup) {
+            _uiState.update {
+                it.copy(
+                    directionPickerStop = busStop,
+                    directionOptions = emptyList(),
+                    isLoadingDirections = true,
+                    searchQuery = "",
+                    busSearchResults = emptyList()
+                )
+            }
+            viewModelScope.launch {
+                try {
+                    val children = tflApiClient.getChildStops(busStop.naptanId)
+                    if (BuildConfig.DEBUG) Log.d(TAG, "addBusStop: got ${children.size} children for ${busStop.naptanId}: ${children.map { "${it.naptanId} (${it.indicator} -> ${it.towards})" }}")
+                    _uiState.update {
+                        it.copy(directionOptions = children, isLoadingDirections = false)
+                    }
+                } catch (e: Exception) {
+                    if (BuildConfig.DEBUG) Log.w(TAG, "addBusStop: getChildStops failed for ${busStop.naptanId}, falling back", e)
+                    addBusStopDirectly(busStop.name, busStop.naptanId)
+                    _uiState.update {
+                        it.copy(
+                            directionPickerStop = null,
+                            directionOptions = emptyList(),
+                            isLoadingDirections = false
+                        )
+                    }
+                }
+            }
+        } else {
+            addBusStopDirectly(busStop.name, busStop.naptanId)
+        }
+    }
+
+    private fun addBusStopDirectly(name: String, naptanId: String) {
+        if (BuildConfig.DEBUG) Log.d(TAG, "addBusStopDirectly: name=$name naptanId=$naptanId currentStationCount=${_uiState.value.stations.size}")
         _uiState.update {
             val newEntry = StationEntry(
                 groupId = groupId ?: 0L,
-                stationName = busStop.name,
-                crsCode = busStop.naptanId,
+                stationName = name,
+                crsCode = naptanId,
                 displayOrder = it.stations.size,
                 type = TransportType.BUS
             )
@@ -147,6 +196,45 @@ class CreateEditGroupViewModel @Inject constructor(
                 stations = it.stations + newEntry,
                 searchQuery = "",
                 busSearchResults = emptyList()
+            )
+        }
+        if (BuildConfig.DEBUG) Log.d(TAG, "addBusStopDirectly: newStationCount=${_uiState.value.stations.size} entries=${_uiState.value.stations.map { "${it.crsCode}(${it.filterCrs})" }}")
+    }
+
+    fun selectDirection(child: BusStop?) {
+        val groupStop = _uiState.value.directionPickerStop ?: return
+        if (BuildConfig.DEBUG) Log.d(TAG, "selectDirection: groupStop=${groupStop.naptanId} child=${child?.naptanId} indicator=${child?.indicator} towards=${child?.towards}")
+        if (child == null) {
+            // "All directions" — use group ID
+            addBusStopDirectly(groupStop.name, groupStop.naptanId)
+        } else {
+            // Build display name with direction info
+            val directionSuffix = buildList {
+                child.indicator?.let { add(it) }
+                child.towards?.let { add("towards $it") }
+            }.joinToString(" ")
+            val displayName = if (directionSuffix.isNotEmpty()) {
+                "${groupStop.name} ($directionSuffix)"
+            } else {
+                groupStop.name
+            }
+            addBusStopDirectly(displayName, child.naptanId)
+        }
+        _uiState.update {
+            it.copy(
+                directionPickerStop = null,
+                directionOptions = emptyList(),
+                isLoadingDirections = false
+            )
+        }
+    }
+
+    fun dismissDirectionPicker() {
+        _uiState.update {
+            it.copy(
+                directionPickerStop = null,
+                directionOptions = emptyList(),
+                isLoadingDirections = false
             )
         }
     }

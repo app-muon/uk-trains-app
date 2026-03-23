@@ -12,6 +12,7 @@ import com.example.transport_app.data.network.TflApiClient
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import java.util.Calendar
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -143,7 +144,17 @@ class DeparturesRepository @Inject constructor(
     ): StationResult = try {
         val cached = cachedDepartureDao.getByStation(groupId, station.crsCode, station.filterCrs)
         if (cached.isNotEmpty()) {
-            StationResult.Success(departures = cached.map { it.toDeparture() }, fromCache = true)
+            val nowMinutes = Calendar.getInstance().let {
+                it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE)
+            }
+            val sorted = cached.map { it.toDeparture() }.sortedBy { dep ->
+                val parts = dep.scheduledTime.split(":")
+                var mins = (parts.getOrNull(0)?.toIntOrNull() ?: 0) * 60 +
+                        (parts.getOrNull(1)?.toIntOrNull() ?: 0)
+                if (mins < nowMinutes - 720) mins += 1440
+                mins
+            }
+            StationResult.Success(departures = sorted, fromCache = true)
         } else {
             StationResult.Error(crs = station.crsCode, message = originalError.message ?: "Unknown error")
         }

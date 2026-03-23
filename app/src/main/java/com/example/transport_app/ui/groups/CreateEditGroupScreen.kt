@@ -120,6 +120,17 @@ fun CreateEditGroupScreen(
         }
     }
 
+    uiState.directionPickerStop?.let { stop ->
+        DirectionPickerDialog(
+            stopName = stop.name,
+            options = uiState.directionOptions,
+            isLoading = uiState.isLoadingDirections,
+            onSelectAll = { viewModel.selectDirection(null) },
+            onSelect = { viewModel.selectDirection(it) },
+            onDismiss = { viewModel.dismissDirectionPicker() }
+        )
+    }
+
     routeFilterTargetIndex?.let { index ->
         val entry = uiState.stations.getOrNull(index)
         if (entry != null) {
@@ -466,6 +477,73 @@ private fun RouteFilterDialog(
                 enabled = route.isNotBlank()
             ) { Text("Apply") }
         },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun DirectionPickerDialog(
+    stopName: String,
+    options: List<BusStop>,
+    isLoading: Boolean,
+    onSelectAll: () -> Unit,
+    onSelect: (BusStop) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose direction") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    stopName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                } else {
+                    Text(
+                        "All directions",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelectAll() }
+                            .padding(vertical = 12.dp, horizontal = 4.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    HorizontalDivider()
+
+                    options.forEach { child ->
+                        val label = buildList {
+                            child.indicator?.let { add(it) }
+                            child.towards?.let { add("towards $it") }
+                        }.joinToString(" ").ifEmpty { child.name }
+
+                        Text(
+                            label,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(child) }
+                                .padding(vertical = 12.dp, horizontal = 4.dp),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        HorizontalDivider()
+                    }
+                }
+            }
+        },
+        confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
