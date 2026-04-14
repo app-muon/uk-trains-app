@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.DirectionsBus
 import androidx.compose.material.icons.outlined.Train
@@ -38,6 +39,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -188,6 +191,11 @@ fun DeparturesScreen(
                 item {
                     StationHeader(section.headerText, section.type)
                 }
+                if (section.type == TransportType.BUS) {
+                    item {
+                        BusStopCodeRow(section.crsCode)
+                    }
+                }
                 if (section.messages.isNotEmpty()) {
                     items(section.messages) { msg ->
                         Text(
@@ -236,6 +244,35 @@ fun DeparturesScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun BusStopCodeRow(naptanId: String) {
+    val clipboardManager = LocalClipboardManager.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "Stop code: $naptanId",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(
+            onClick = { clipboardManager.setText(AnnotatedString(naptanId)) },
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                Icons.Default.ContentCopy,
+                contentDescription = "Copy stop code",
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

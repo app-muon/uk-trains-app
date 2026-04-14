@@ -125,6 +125,7 @@ fun CreateEditGroupScreen(
             stopName = stop.name,
             options = uiState.directionOptions,
             isLoading = uiState.isLoadingDirections,
+            showAllOption = uiState.directionPickerHasAllOption,
             onSelectAll = { viewModel.selectDirection(null) },
             onSelect = { viewModel.selectDirection(it) },
             onDismiss = { viewModel.dismissDirectionPicker() }
@@ -396,8 +397,10 @@ private fun BusStopSearchField(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 results.forEach { busStop ->
+                    val displayName = if (busStop.indicator != null) "${busStop.name} — Stop ${busStop.indicator}"
+                                      else busStop.name
                     Text(
-                        busStop.name,
+                        displayName,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
@@ -488,6 +491,7 @@ private fun DirectionPickerDialog(
     stopName: String,
     options: List<BusStop>,
     isLoading: Boolean,
+    showAllOption: Boolean = true,
     onSelectAll: () -> Unit,
     onSelect: (BusStop) -> Unit,
     onDismiss: () -> Unit
@@ -513,16 +517,18 @@ private fun DirectionPickerDialog(
                         CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                     }
                 } else {
-                    Text(
-                        "All directions",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelectAll() }
-                            .padding(vertical = 12.dp, horizontal = 4.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    HorizontalDivider()
+                    if (showAllOption) {
+                        Text(
+                            "All directions",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelectAll() }
+                                .padding(vertical = 12.dp, horizontal = 4.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        HorizontalDivider()
+                    }
 
                     options.forEach { child ->
                         val label = buildList {

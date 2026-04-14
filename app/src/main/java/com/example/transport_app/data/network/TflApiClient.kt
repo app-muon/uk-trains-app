@@ -222,6 +222,17 @@ class TflApiClient @Inject constructor(
 
     suspend fun searchStops(query: String): List<BusStop> = withContext(Dispatchers.IO) {
         if (query.length < 2) return@withContext emptyList()
+
+        // If the query looks like a NaPTAN ID (e.g. "490014934E" copied from the stop info card),
+        // resolve it directly — the Search API only searches by name, not by ID.
+        if (query.matches(Regex("490[A-Z0-9]+", RegexOption.IGNORE_CASE))) {
+            return@withContext try {
+                listOf(getStopInfo(query.uppercase()))
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+
         val encoded = URLEncoder.encode(query, "UTF-8")
         val url = appendKey("$baseUrl/StopPoint/Search?query=$encoded&stopTypes=NaptanPublicBusCoachTram&maxResults=20")
         val body = executeRequest(url)
@@ -232,7 +243,9 @@ class TflApiClient @Inject constructor(
             val match = matches.getJSONObject(i)
             results += BusStop(
                 name = match.getString("name"),
-                naptanId = match.getString("id")
+                naptanId = match.getString("id"),
+                towards = match.optString("towards", "").ifEmpty { null },
+                parentId = match.optString("parentId", "").ifEmpty { null }
             )
         }
         results
@@ -277,6 +290,41 @@ class TflApiClient @Inject constructor(
         }
         if (BuildConfig.DEBUG) Log.d(TAG, "getRoutes: discovered from arrivals=$discoveredRoutes")
         discoveredRoutes.sorted()
+    }
+
+    /**
+     * Enriches a list of individual stops by fetching each one's indicator and towards fields
+     * from /StopPoint/{id}. Used when search results return multiple stops with the same name.
+     */
+    suspend fun enrichStops(stops: List<BusStop>): List<BusStop> = withContext(Dispatchers.IO) {
+        stops.map { stop ->
+            try {
+                val url = appendKey("$baseUrl/StopPoint/${stop.naptanId}")
+                val body = executeRequest(url)
+                val json = JSONObject(body)
+                val indicator = json.optString("indicator", "").ifEmpty { null }
+                val towards = parseTowards(json)
+                if (BuildConfig.DEBUG) Log.d(TAG, "enrichStops: ${stop.naptanId} indicator=$indicator towards=$towards")
+                // Preserve existing towards if the API doesn't return one (individual stops
+                // often lack additionalProperties but the search response already had towards).
+                stop.copy(indicator = indicator, towards = towards ?: stop.towards)
+            } catch (e: Exception) {
+                if (BuildConfig.DEBUG) Log.w(TAG, "enrichStops: failed for ${stop.naptanId}: ${e.message}")
+                stop
+            }
+        }
+    }
+
+    suspend fun getStopInfo(naptanId: String): BusStop = withContext(Dispatchers.IO) {
+        val url = appendKey("$baseUrl/StopPoint/$naptanId")
+        val body = executeRequest(url)
+        val json = JSONObject(body)
+        BusStop(
+            name = json.optString("commonName", ""),
+            naptanId = naptanId,
+            indicator = json.optString("indicator", "").ifEmpty { null },
+            towards = parseTowards(json)
+        )
     }
 
     suspend fun getChildStops(groupId: String): List<BusStop> = withContext(Dispatchers.IO) {

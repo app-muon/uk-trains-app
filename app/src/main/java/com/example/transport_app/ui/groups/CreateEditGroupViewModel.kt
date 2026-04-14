@@ -28,6 +28,7 @@ data class CreateEditGroupUiState(
     val searchQuery: String = "",
     val searchResults: List<Station> = emptyList(),
     val busSearchResults: List<BusStop> = emptyList(),
+    val busSearchGroups: Map<String, List<BusStop>> = emptyMap(),
     val isBusSearching: Boolean = false,
     val searchMode: String = TransportType.TRAIN,
     val isSaved: Boolean = false,
@@ -39,7 +40,8 @@ data class CreateEditGroupUiState(
     val isLoadingRoutes: Boolean = false,
     val directionPickerStop: BusStop? = null,
     val directionOptions: List<BusStop> = emptyList(),
-    val isLoadingDirections: Boolean = false
+    val isLoadingDirections: Boolean = false,
+    val directionPickerHasAllOption: Boolean = true
 )
 
 @HiltViewModel
@@ -91,6 +93,7 @@ class CreateEditGroupViewModel @Inject constructor(
                 searchQuery = "",
                 searchResults = emptyList(),
                 busSearchResults = emptyList(),
+                busSearchGroups = emptyMap(),
                 isBusSearching = false
             )
         }
@@ -116,10 +119,16 @@ class CreateEditGroupViewModel @Inject constructor(
                 try {
                     val results = busStopRepository.search(query)
                     if (BuildConfig.DEBUG) Log.d(TAG, "busSearch: query='$query' -> ${results.size} results: ${results.map { "${it.naptanId} (${it.name})" }}")
-                    _uiState.update { it.copy(busSearchResults = results, isBusSearching = false) }
+                    // Group by name. For display, show one entry per name:
+                    // prefer a group stop (490G/HUB) if present, otherwise the first individual stop.
+                    val grouped = results.groupBy { it.name }
+                    val display = grouped.map { (_, stops) ->
+                        stops.firstOrNull { TflApiClient.isGroupStop(it.naptanId) } ?: stops.first()
+                    }
+                    _uiState.update { it.copy(busSearchResults = display, busSearchGroups = grouped, isBusSearching = false) }
                 } catch (e: Exception) {
                     if (BuildConfig.DEBUG) Log.w(TAG, "busSearch: query='$query' failed: ${e.message}")
-                    _uiState.update { it.copy(busSearchResults = emptyList(), isBusSearching = false) }
+                    _uiState.update { it.copy(busSearchResults = emptyList(), busSearchGroups = emptyMap(), isBusSearching = false) }
                 }
             }
         }
@@ -154,6 +163,7 @@ class CreateEditGroupViewModel @Inject constructor(
                     directionPickerStop = busStop,
                     directionOptions = emptyList(),
                     isLoadingDirections = true,
+                    directionPickerHasAllOption = true,
                     searchQuery = "",
                     busSearchResults = emptyList()
                 )
@@ -178,7 +188,47 @@ class CreateEditGroupViewModel @Inject constructor(
                 }
             }
         } else {
-            addBusStopDirectly(busStop.name, busStop.naptanId)
+            // Check if there are multiple individual stops with this name from the search results.
+            // If so, look up the parent group stop and show the direction picker with proper labels.
+            val alternatives = _uiState.value.busSearchGroups[busStop.name] ?: emptyList()
+            if (alternatives.size > 1) {
+                // Find the common parentId across all alternatives (all should share one).
+                // If it's a bus group (490G/HUB), we can expand the full hub to get ALL stops
+                // with proper stop letters, not just the subset returned by search.
+                val commonParentId = alternatives
+                    .mapNotNull { it.parentId }
+                    .groupBy { it }
+                    .maxByOrNull { it.value.size }
+                    ?.key
+                val parentIsBusGroup = commonParentId != null && TflApiClient.isGroupStop(commonParentId)
+
+                _uiState.update {
+                    it.copy(
+                        directionPickerStop = if (parentIsBusGroup)
+                            BusStop(name = busStop.name, naptanId = commonParentId!!)
+                        else
+                            busStop,
+                        directionOptions = alternatives,
+                        isLoadingDirections = true,
+                        directionPickerHasAllOption = parentIsBusGroup,
+                        searchQuery = "",
+                        busSearchResults = emptyList()
+                    )
+                }
+                viewModelScope.launch {
+                    val children = try {
+                        if (commonParentId != null)
+                            tflApiClient.getChildStops(commonParentId)
+                        else
+                            tflApiClient.enrichStops(alternatives)
+                    } catch (_: Exception) {
+                        tflApiClient.enrichStops(alternatives)
+                    }
+                    _uiState.update { it.copy(directionOptions = children, isLoadingDirections = false) }
+                }
+            } else {
+                addBusStopDirectly(busStop.name, busStop.naptanId)
+            }
         }
     }
 
@@ -224,7 +274,8 @@ class CreateEditGroupViewModel @Inject constructor(
             it.copy(
                 directionPickerStop = null,
                 directionOptions = emptyList(),
-                isLoadingDirections = false
+                isLoadingDirections = false,
+                directionPickerHasAllOption = true
             )
         }
     }
@@ -234,7 +285,8 @@ class CreateEditGroupViewModel @Inject constructor(
             it.copy(
                 directionPickerStop = null,
                 directionOptions = emptyList(),
-                isLoadingDirections = false
+                isLoadingDirections = false,
+                directionPickerHasAllOption = true
             )
         }
     }

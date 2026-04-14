@@ -1,5 +1,6 @@
 package com.example.transport_app.ui.departures
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -37,6 +38,7 @@ import com.example.transport_app.ui.theme.StatusOrange
 @Composable
 fun BusDetailScreen(
     onBack: () -> Unit,
+    onStopClick: (naptanId: String, stopName: String) -> Unit = { _, _ -> },
     viewModel: BusDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -97,7 +99,7 @@ fun BusDetailScreen(
                     item { StopColumnHeader() }
 
                     itemsIndexed(uiState.stops) { index, stop ->
-                        StopRow(stop)
+                        StopRow(stop, onStopClick)
                         if (index < uiState.stops.lastIndex) {
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                         }
@@ -140,12 +142,16 @@ private fun StopColumnHeader() {
 }
 
 @Composable
-private fun StopRow(stop: BusStopArrival) {
+private fun StopRow(stop: BusStopArrival, onStopClick: (naptanId: String, stopName: String) -> Unit) {
     val dueText = if (stop.minutesAway <= 0) "Due" else "${stop.minutesAway} min"
     val dueColor = if (stop.minutesAway <= 0) StatusGreen else StatusOrange
+    val clickable = stop.naptanId.isNotEmpty()
 
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (clickable) Modifier.clickable { onStopClick(stop.naptanId, stop.stopName) } else Modifier)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

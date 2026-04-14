@@ -4,5 +4,6 @@ data class BusStop(
     val name: String,
     val naptanId: String,
     val indicator: String? = null,
-    val towards: String? = null
+    val towards: String? = null,
+    val parentId: String? = null
 )
