@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.DirectionsBus
 import androidx.compose.material.icons.outlined.DirectionsSubway
@@ -65,6 +66,7 @@ import java.util.Locale
 @Composable
 fun DeparturesScreen(
     onBack: () -> Unit,
+    onEditBoard: () -> Unit,
     onServiceClick: (serviceId: String) -> Unit,
     onBusClick: (vehicleId: String) -> Unit = {},
     viewModel: DeparturesViewModel = hiltViewModel()
@@ -92,6 +94,9 @@ fun DeparturesScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onEditBoard) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit board")
+                    }
                     IconButton(onClick = viewModel::refresh, enabled = !uiState.isLoading) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }

@@ -54,9 +54,11 @@ fun AppNavigation() {
         composable(
             route = "departures/{groupId}",
             arguments = listOf(navArgument("groupId") { type = NavType.LongType })
-        ) {
+        ) { backStackEntry ->
+            val groupId = backStackEntry.arguments?.getLong("groupId") ?: return@composable
             DeparturesScreen(
                 onBack = { navController.popBackStack() },
+                onEditBoard = { navController.navigate("edit_group/$groupId") },
                 onServiceClick = { serviceId ->
                     val encoded = URLEncoder.encode(serviceId, "UTF-8")
                     navController.navigate("service_detail/$encoded")
