@@ -25,7 +25,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -217,8 +216,8 @@ private fun GroupCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             ReorderHandle(
@@ -238,8 +237,18 @@ private fun GroupCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit board")
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clickable(onClick = onEdit),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = "Edit board",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -253,13 +262,9 @@ private fun ReorderHandle(
     onDragOffset: (Float) -> Unit,
     onDragEnd: () -> Unit
 ) {
-    Icon(
-        Icons.Default.DragHandle,
-        contentDescription = "Drag to reorder",
-        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    Box(
         modifier = Modifier
-            .size(40.dp)
-            .padding(end = 8.dp)
+            .size(32.dp)
             .pointerInput(index, itemCount) {
                 var totalDrag = 0f
                 detectDragGesturesAfterLongPress(
@@ -281,8 +286,16 @@ private fun ReorderHandle(
                         onDragOffset(totalDrag)
                     }
                 )
-            }
-    )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            Icons.Default.DragHandle,
+            contentDescription = "Drag to reorder",
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 private fun groupVisualOffset(
