@@ -14,9 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.DirectionsBus
 import androidx.compose.material.icons.outlined.DirectionsSubway
@@ -65,7 +65,7 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeparturesScreen(
-    onBack: () -> Unit,
+    onHome: () -> Unit,
     onEditBoard: () -> Unit,
     onServiceClick: (serviceId: String) -> Unit,
     onBusClick: (vehicleId: String) -> Unit = {},
@@ -89,8 +89,8 @@ fun DeparturesScreen(
             TopAppBar(
                 title = { Text(uiState.groupName.ifEmpty { "Departures" }) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    IconButton(onClick = onHome) {
+                        Icon(Icons.Default.Home, contentDescription = "Boards")
                     }
                 },
                 actions = {

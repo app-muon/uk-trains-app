@@ -1,8 +1,7 @@
 package com.example.transport_app.ui.groups
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,17 +18,17 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.outlined.Train
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +60,6 @@ fun GroupsListScreen(
 ) {
     val groups by viewModel.groups.collectAsState()
     var displayedGroups by remember { mutableStateOf(groups) }
-    var menuGroup by remember { mutableStateOf<GroupWithCount?>(null) }
     var draggedGroupId by remember { mutableStateOf<Long?>(null) }
     var dragStartIndex by remember { mutableStateOf<Int?>(null) }
     var dragTargetIndex by remember { mutableStateOf<Int?>(null) }
@@ -147,7 +145,7 @@ fun GroupsListScreen(
                         ),
                         isDragging = draggedGroupId == group.id,
                         onClick = { onGroupClick(group.id) },
-                        onLongClick = { menuGroup = group },
+                        onEdit = { onEditGroup(group.id) },
                         onItemStepMeasured = { groupItemStepPx = it },
                         onDragStart = {
                             draggedGroupId = group.id
@@ -182,23 +180,8 @@ fun GroupsListScreen(
             }
         }
     }
-
-    // Long-press context menu
-    menuGroup?.let { group ->
-        AlertDialog(
-            onDismissRequest = { menuGroup = null },
-            title = { Text(group.name) },
-            confirmButton = {
-                TextButton(onClick = { menuGroup = null; onEditGroup(group.id) }) { Text("Edit") }
-            },
-            dismissButton = {
-                TextButton(onClick = { menuGroup = null }) { Text("Cancel") }
-            }
-        )
-    }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GroupCard(
     group: GroupWithCount,
@@ -207,7 +190,7 @@ private fun GroupCard(
     visualOffset: Float,
     isDragging: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
+    onEdit: () -> Unit,
     onItemStepMeasured: (Float) -> Unit,
     onDragStart: () -> Unit,
     onDragOffset: (Float) -> Unit,
@@ -228,7 +211,7 @@ private fun GroupCard(
             }
             .padding(horizontal = if (isDragging) 2.dp else 0.dp)
             .padding(vertical = if (isDragging) 2.dp else 0.dp)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            .clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(defaultElevation = if (isDragging) 10.dp else 1.dp)
     ) {
         Row(
@@ -255,6 +238,9 @@ private fun GroupCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit board")
+            }
         }
     }
 }

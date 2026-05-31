@@ -57,7 +57,12 @@ fun AppNavigation() {
         ) { backStackEntry ->
             val groupId = backStackEntry.arguments?.getLong("groupId") ?: return@composable
             DeparturesScreen(
-                onBack = { navController.popBackStack() },
+                onHome = {
+                    navController.navigate("groups") {
+                        popUpTo("groups") { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
                 onEditBoard = { navController.navigate("edit_group/$groupId") },
                 onServiceClick = { serviceId ->
                     val encoded = URLEncoder.encode(serviceId, "UTF-8")
