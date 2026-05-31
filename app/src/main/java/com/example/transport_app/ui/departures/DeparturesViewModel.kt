@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.transport_app.data.model.Departure
 import com.example.transport_app.data.model.StationEntry
+import com.example.transport_app.data.model.TransportDataSource
 import com.example.transport_app.data.model.TransportType
 import com.example.transport_app.data.repository.DeparturesRepository
 import com.example.transport_app.data.repository.GroupRepository
@@ -27,25 +28,37 @@ data class StationSection(
     val departures: List<Departure>,
     val messages: List<String> = emptyList(),
     val fromCache: Boolean = false,
-    val type: String = TransportType.TRAIN
+    val type: String = TransportType.TRAIN,
+    val dataSource: String = TransportDataSource.DARWIN,
+    val direction: String? = null,
+    val directionName: String? = null
 ) {
     val headerText: String
         get() = when {
             type == TransportType.BUS && filterName != null -> "$stationName \u2014 $filterName"
             type == TransportType.BUS -> stationName
+            dataSource == TransportDataSource.TFL && filterName != null && directionName != null -> "$stationName \u2014 $filterName, $directionName"
+            dataSource == TransportDataSource.TFL && filterName != null -> "$stationName \u2014 $filterName"
+            dataSource == TransportDataSource.TFL && directionName != null -> "$stationName \u2014 $directionName"
             filterName != null -> "$stationName \u2192 $filterName"
             else -> stationName
         }
 
     val sectionKey: String
-        get() = buildSectionKey(type, crsCode, filterCrs)
+        get() = buildSectionKey(type, crsCode, filterCrs, dataSource, direction)
 }
 
-private fun buildSectionKey(type: String, crsCode: String, filterCrs: String?): String =
-    if (filterCrs != null) "$type:$crsCode->$filterCrs" else "$type:$crsCode"
+private fun buildSectionKey(
+    type: String,
+    crsCode: String,
+    filterCrs: String?,
+    dataSource: String,
+    direction: String?
+): String =
+    listOf(dataSource, type, crsCode, filterCrs.orEmpty(), direction.orEmpty()).joinToString(":")
 
 private fun stationSectionKey(station: StationEntry): String =
-    buildSectionKey(station.type, station.crsCode, station.filterCrs)
+    buildSectionKey(station.type, station.crsCode, station.filterCrs, station.dataSource, station.direction)
 
 data class DeparturesUiState(
     val groupName: String = "",
@@ -110,7 +123,7 @@ class DeparturesViewModel @Inject constructor(
             _uiState.update { it.copy(isLoadingMore = true) }
             // Only fetch more trains — buses don't support time offset pagination
             val trainStations = groupRepository.getStations(groupId)
-                .filter { it.type == TransportType.TRAIN }
+                .filter { it.type == TransportType.TRAIN && it.dataSource == TransportDataSource.DARWIN }
             val results = departuresRepository.fetchAll(trainStations, groupId, timeOffset = offset)
             _uiState.update {
                 val newSections = appendSections(it.sections, trainStations, results)
@@ -130,7 +143,7 @@ class DeparturesViewModel @Inject constructor(
         val nowMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
 
         var latestMinutes = nowMinutes
-        for (section in sections.filter { it.type == TransportType.TRAIN }) {
+        for (section in sections.filter { it.type == TransportType.TRAIN && it.dataSource == TransportDataSource.DARWIN }) {
             for (dep in section.departures) {
                 val parts = dep.scheduledTime.split(":")
                 if (parts.size == 2) {
@@ -153,7 +166,19 @@ class DeparturesViewModel @Inject constructor(
     private fun buildSections(stations: List<StationEntry>, results: List<StationResult>): List<StationSection> =
         stations.zip(results).mapNotNull { (station, result) ->
             (result as? StationResult.Success)?.let {
-                StationSection(station.stationName, station.crsCode, station.filterCrs, station.filterName, it.departures, it.messages, it.fromCache, station.type)
+                StationSection(
+                    station.stationName,
+                    station.crsCode,
+                    station.filterCrs,
+                    station.filterName,
+                    it.departures,
+                    it.messages,
+                    it.fromCache,
+                    station.type,
+                    station.dataSource,
+                    station.direction,
+                    station.directionName
+                )
             }
         }
 
@@ -180,7 +205,10 @@ class DeparturesViewModel @Inject constructor(
                         (prev?.departures ?: emptyList()) + newDepartures,
                         result.messages,
                         fromCache = (prev?.fromCache ?: false) || result.fromCache,
-                        type = station.type
+                        type = station.type,
+                        dataSource = station.dataSource,
+                        direction = station.direction,
+                        directionName = station.directionName
                     )
                 }
                 is StationResult.Error -> if (prev != null) newSections[key] = prev

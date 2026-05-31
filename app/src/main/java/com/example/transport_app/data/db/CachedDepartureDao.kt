@@ -13,8 +13,9 @@ interface CachedDepartureDao {
         SELECT * FROM cached_departures
         WHERE groupId = :groupId AND crsCode = :crsCode
           AND (filterCrs = :filterCrs OR (filterCrs IS NULL AND :filterCrs IS NULL))
+          AND (direction = :direction OR (direction IS NULL AND :direction IS NULL))
     """)
-    suspend fun getByStation(groupId: Long, crsCode: String, filterCrs: String?): List<CachedDeparture>
+    suspend fun getByStation(groupId: Long, crsCode: String, filterCrs: String?, direction: String?): List<CachedDeparture>
 
     @Query("SELECT MIN(cachedAt) FROM cached_departures WHERE groupId = :groupId")
     suspend fun getCachedTimestamp(groupId: Long): Long?
@@ -22,8 +23,8 @@ interface CachedDepartureDao {
     @Insert
     suspend fun insertAll(departures: List<CachedDeparture>)
 
-    @Query("DELETE FROM cached_departures WHERE groupId = :groupId AND crsCode = :crsCode AND (filterCrs = :filterCrs OR (filterCrs IS NULL AND :filterCrs IS NULL))")
-    suspend fun deleteByStation(groupId: Long, crsCode: String, filterCrs: String?)
+    @Query("DELETE FROM cached_departures WHERE groupId = :groupId AND crsCode = :crsCode AND (filterCrs = :filterCrs OR (filterCrs IS NULL AND :filterCrs IS NULL)) AND (direction = :direction OR (direction IS NULL AND :direction IS NULL))")
+    suspend fun deleteByStation(groupId: Long, crsCode: String, filterCrs: String?, direction: String?)
 
     @Query("DELETE FROM cached_departures WHERE groupId = :groupId")
     suspend fun deleteByGroup(groupId: Long)
@@ -32,8 +33,14 @@ interface CachedDepartureDao {
     suspend fun deleteOlderThan(cutoff: Long)
 
     @Transaction
-    suspend fun replaceForStation(groupId: Long, crsCode: String, filterCrs: String?, departures: List<CachedDeparture>) {
-        deleteByStation(groupId, crsCode, filterCrs)
+    suspend fun replaceForStation(
+        groupId: Long,
+        crsCode: String,
+        filterCrs: String?,
+        direction: String?,
+        departures: List<CachedDeparture>
+    ) {
+        deleteByStation(groupId, crsCode, filterCrs, direction)
         insertAll(departures)
     }
 }

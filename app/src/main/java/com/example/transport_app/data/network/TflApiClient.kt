@@ -5,6 +5,9 @@ import com.example.transport_app.BuildConfig
 import com.example.transport_app.data.model.BusStop
 import com.example.transport_app.data.model.BusStopArrival
 import com.example.transport_app.data.model.Departure
+import com.example.transport_app.data.model.TflDirection
+import com.example.transport_app.data.model.TflLine
+import com.example.transport_app.data.model.TflRailStation
 import com.example.transport_app.data.model.TransportType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -262,6 +265,85 @@ class TflApiClient @Inject constructor(
             arrivals.sortedBy { it.second }.map { it.first }
         }
 
+    suspend fun searchRailStations(query: String, modes: List<String>): List<TflRailStation> =
+        withContext(Dispatchers.IO) {
+            if (query.length < 2) return@withContext emptyList()
+            val encoded = URLEncoder.encode(query, "UTF-8")
+            val modeParam = modes.joinToString(",")
+            val url = appendKey("$baseUrl/StopPoint/Search?query=$encoded&modes=$modeParam&maxResults=20")
+            val body = executeRequest(url)
+            val json = JSONObject(body)
+            val matches = json.optJSONArray("matches") ?: return@withContext emptyList()
+            val results = mutableListOf<TflRailStation>()
+            for (i in 0 until matches.length()) {
+                val match = matches.getJSONObject(i)
+                val stationModes = parseStringArray(match.optJSONArray("modes"))
+                val relevantModes = stationModes.filter { it in modes }
+                if (relevantModes.isEmpty()) continue
+                results += TflRailStation(
+                    id = match.getString("id"),
+                    name = match.getString("name"),
+                    modes = relevantModes,
+                    lines = parseLines(match, modes),
+                    arrivalStopIds = listOf(match.getString("id")).filter { !isHubStop(it) }
+                )
+            }
+            results.distinctBy { it.id }
+        }
+
+    suspend fun getRailStation(stationId: String, modes: List<String>): TflRailStation =
+        withContext(Dispatchers.IO) {
+            val url = appendKey("$baseUrl/StopPoint/$stationId")
+            val body = executeRequest(url)
+            val json = JSONObject(body)
+            TflRailStation(
+                id = resolvedArrivalStopIds(json, modes).firstOrNull() ?: json.optString("naptanId", stationId),
+                name = json.optString("commonName", "").ifEmpty { stationId },
+                modes = parseStringArray(json.optJSONArray("modes")).filter { it in modes },
+                lines = parseLines(json, modes),
+                arrivalStopIds = resolvedArrivalStopIds(json, modes)
+            )
+        }
+
+    suspend fun getRailDirections(
+        stationId: String,
+        lineId: String?
+    ): List<TflDirection> = withContext(Dispatchers.IO) {
+        val arr = fetchRailArrivalArray(stationId)
+        val labelsByDirection = linkedMapOf<String, MutableSet<String>>()
+        for (i in 0 until arr.length()) {
+            val obj = arr.getJSONObject(i)
+            val predictionLineId = obj.optString("lineId", "")
+            val predictionLineName = obj.optString("lineName", "")
+            if (lineId != null &&
+                !predictionLineId.equals(lineId, ignoreCase = true) &&
+                !predictionLineName.equals(lineId, ignoreCase = true)
+            ) continue
+            val predictionDirection = obj.optString("direction", "").ifEmpty { null } ?: continue
+            val towards = obj.optString("towards", "").ifEmpty {
+                obj.optString("destinationName", "")
+            }
+            labelsByDirection.getOrPut(predictionDirection) { linkedSetOf() }.add(towards)
+        }
+        labelsByDirection.map { (id, destinations) ->
+            val suffix = destinations.filter { it.isNotBlank() }.take(3).joinToString(", ")
+            val label = if (suffix.isBlank()) id.replaceFirstChar { it.uppercase() }
+            else "${id.replaceFirstChar { it.uppercase() }} towards $suffix"
+            TflDirection(id, label)
+        }.sortedBy { it.label }
+    }
+
+    suspend fun getRailArrivals(
+        stationId: String,
+        transportType: String,
+        lineId: String?,
+        direction: String?
+    ): List<Departure> = withContext(Dispatchers.IO) {
+        fetchRailArrivals(stationId, transportType, lineId, direction)
+            .sortedBy { it.second }
+            .map { it.first }
+    }
+
     suspend fun getRoutes(naptanId: String): List<String> = withContext(Dispatchers.IO) {
         if (BuildConfig.DEBUG) Log.d(TAG, "getRoutes: naptanId=$naptanId isGroup=${isGroupStop(naptanId)}")
         if (isGroupStop(naptanId)) {
@@ -428,6 +510,204 @@ class TflApiClient @Inject constructor(
         }
         if (BuildConfig.DEBUG) Log.d(TAG, "fetchArrivals: returning ${arrivals.size} departures for $stopId (filter=$lineFilter)")
         return arrivals
+    }
+
+    private fun fetchRailArrivals(
+        stationId: String,
+        transportType: String,
+        lineFilter: String?,
+        direction: String?
+    ): List<Pair<Departure, Int>> {
+        if (BuildConfig.DEBUG) Log.d(TAG, "fetchRailArrivals: stationId=$stationId lineFilter=$lineFilter direction=$direction")
+        val arr = fetchRailArrivalArray(stationId)
+        val timeFormat = SimpleDateFormat("HH:mm", Locale.UK).apply {
+            timeZone = TimeZone.getTimeZone("Europe/London")
+        }
+        val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.UK).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        val arrivals = mutableListOf<Pair<Departure, Int>>()
+        for (i in 0 until arr.length()) {
+            val obj = arr.getJSONObject(i)
+            val lineId = obj.optString("lineId", "")
+            val lineName = obj.optString("lineName", "")
+            if (lineFilter != null &&
+                !lineId.equals(lineFilter, ignoreCase = true) &&
+                !lineName.equals(lineFilter, ignoreCase = true)
+            ) continue
+            val arrivalDirection = obj.optString("direction", "").ifEmpty { null }
+            if (direction != null && !arrivalDirection.equals(direction, ignoreCase = true)) continue
+
+            val timeToStation = obj.optInt("timeToStation", 0)
+            val expectedArrival = obj.optString("expectedArrival", "")
+            val scheduledTime = try {
+                val date = isoFormat.parse(expectedArrival)
+                if (date != null) timeFormat.format(date) else ""
+            } catch (_: Exception) { "" }
+            val minutes = timeToStation / 60
+            val estimatedTime = if (minutes <= 0) "Due" else "$minutes min"
+            val serviceId = obj.optString("vehicleId", "")
+                .ifEmpty { obj.optString("id", "") }
+                .ifEmpty { "$stationId-$i" }
+            arrivals += Pair(
+                Departure(
+                    scheduledTime = scheduledTime,
+                    estimatedTime = estimatedTime,
+                    platform = obj.optString("platformName", "").ifEmpty { null },
+                    destination = obj.optString("destinationName", "").ifEmpty {
+                        obj.optString("towards", "")
+                    },
+                    isCancelled = false,
+                    originCrs = stationId,
+                    originName = obj.optString("stationName", ""),
+                    serviceId = serviceId,
+                    routeNumber = lineName.ifEmpty { lineId },
+                    type = transportType
+                ),
+                timeToStation
+            )
+        }
+        return arrivals
+    }
+
+    private fun fetchRailArrivalArray(stationIds: String): JSONArray {
+        val combined = JSONArray()
+        stationIds.split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .forEach { stationId ->
+                val url = appendKey("$baseUrl/StopPoint/$stationId/arrivals")
+                val body = executeRequest(url)
+                val arr = JSONArray(body)
+                for (i in 0 until arr.length()) {
+                    combined.put(arr.getJSONObject(i))
+                }
+            }
+        return combined
+    }
+
+    private fun parseStringArray(array: JSONArray?): List<String> {
+        if (array == null) return emptyList()
+        val values = mutableListOf<String>()
+        for (i in 0 until array.length()) {
+            values += array.optString(i, "")
+        }
+        return values.filter { it.isNotBlank() }
+    }
+
+    private fun parseLines(json: JSONObject, allowedModes: List<String>): List<TflLine> {
+        val linesById = linkedMapOf<String, TflLine>()
+        val modeByLine = mutableMapOf<String, String>()
+        val stopIdsByLine = mutableMapOf<String, MutableSet<String>>()
+
+        val groups = json.optJSONArray("lineModeGroups")
+        if (groups != null) {
+            for (i in 0 until groups.length()) {
+                val group = groups.getJSONObject(i)
+                val mode = group.optString("modeName", "")
+                if (mode !in allowedModes) continue
+                for (lineId in parseLineIdentifiers(group.opt("lineIdentifier"))) {
+                    modeByLine[lineId] = mode
+                }
+            }
+        }
+
+        val lineGroups = json.optJSONArray("lineGroup")
+        if (lineGroups != null) {
+            for (i in 0 until lineGroups.length()) {
+                val group = lineGroups.getJSONObject(i)
+                val stationAtcoCode = group.optString("stationAtcoCode", "")
+                if (stationAtcoCode.isBlank() || isHubStop(stationAtcoCode)) continue
+                for (lineId in parseLineIdentifiers(group.opt("lineIdentifier"))) {
+                    if (modeByLine[lineId] in allowedModes) {
+                        stopIdsByLine.getOrPut(lineId) { linkedSetOf() }.add(stationAtcoCode)
+                    }
+                }
+            }
+        }
+
+        val lineArray = json.optJSONArray("lines")
+        if (lineArray != null) {
+            for (i in 0 until lineArray.length()) {
+                val item = lineArray.optJSONObject(i) ?: continue
+                val mode = item.optString("modeName", "").ifEmpty {
+                    item.optString("mode", "")
+                }
+                val id = item.optString("id", "")
+                val inferredMode = mode.ifEmpty { modeByLine[id].orEmpty() }
+                if (inferredMode !in allowedModes) continue
+                val name = item.optString("name", id)
+                if (id.isNotBlank()) {
+                    linesById[id] = TflLine(
+                        id = id,
+                        name = name,
+                        mode = inferredMode,
+                        stopIds = stopIdsByLine[id]?.toList().orEmpty()
+                    )
+                }
+            }
+        }
+
+        if (groups != null) {
+            for (i in 0 until groups.length()) {
+                val group = groups.getJSONObject(i)
+                val mode = group.optString("modeName", "")
+                if (mode !in allowedModes) continue
+                for (id in parseLineIdentifiers(group.opt("lineIdentifier"))) {
+                    if (id.isNotBlank() && id !in linesById) {
+                        linesById[id] = TflLine(
+                            id = id,
+                            name = lineDisplayName(id),
+                            mode = mode,
+                            stopIds = stopIdsByLine[id]?.toList().orEmpty()
+                        )
+                    } else if (id in linesById && linesById[id]?.stopIds.isNullOrEmpty()) {
+                        val existing = linesById.getValue(id)
+                        linesById[id] = existing.copy(stopIds = stopIdsByLine[id]?.toList().orEmpty())
+                    }
+                }
+            }
+        }
+
+        return linesById.values.sortedBy { it.name }
+    }
+
+    private fun parseLineIdentifiers(value: Any?): List<String> = when (value) {
+        is JSONArray -> {
+            val ids = mutableListOf<String>()
+            for (i in 0 until value.length()) {
+                ids += parseLineIdentifiers(value.get(i))
+            }
+            ids
+        }
+        is JSONObject -> listOf(value.optString("id", value.optString("name", ""))).filter { it.isNotBlank() }
+        is String -> listOf(value).filter { it.isNotBlank() }
+        null -> emptyList()
+        else -> listOf(value.toString()).filter { it.isNotBlank() }
+    }
+
+    private fun resolvedArrivalStopIds(json: JSONObject, allowedModes: List<String>): List<String> {
+        val lines = parseLines(json, allowedModes)
+        val fromLines = lines.flatMap { it.stopIds }
+        if (fromLines.isNotEmpty()) return fromLines.distinct()
+
+        val naptanId = json.optString("naptanId", "")
+        val modes = parseStringArray(json.optJSONArray("modes"))
+        if (naptanId.isNotBlank() && !isHubStop(naptanId) && modes.any { it in allowedModes }) {
+            return listOf(naptanId)
+        }
+
+        return emptyList()
+    }
+
+    private fun lineDisplayName(id: String): String =
+        id.split("-").joinToString(" ") { part ->
+            part.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.UK) else it.toString() }
+        }
+
+    private fun isHubStop(naptanId: String): Boolean {
+        return naptanId.startsWith("HUB", ignoreCase = true)
     }
 
     // endregion

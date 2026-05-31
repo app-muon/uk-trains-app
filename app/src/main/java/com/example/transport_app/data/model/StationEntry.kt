@@ -25,5 +25,9 @@ data class StationEntry(
     val displayOrder: Int = 0,
     val filterCrs: String? = null,
     val filterName: String? = null,
-    val type: String = TransportType.TRAIN
+    val type: String = TransportType.TRAIN,
+    val dataSource: String = TransportDataSource.DARWIN,
+    val tflMode: String? = null,
+    val direction: String? = null,
+    val directionName: String? = null
 )

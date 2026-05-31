@@ -6,6 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.example.transport_app.data.model.BusStop
 import com.example.transport_app.data.model.Station
 import com.example.transport_app.data.model.StationEntry
+import com.example.transport_app.data.model.TflDirection
+import com.example.transport_app.data.model.TflLine
+import com.example.transport_app.data.model.TflRailStation
+import com.example.transport_app.data.model.TransportDataSource
 import com.example.transport_app.data.model.TransportType
 import android.util.Log
 import com.example.transport_app.BuildConfig
@@ -27,6 +31,8 @@ data class CreateEditGroupUiState(
     val stations: List<StationEntry> = emptyList(),
     val searchQuery: String = "",
     val searchResults: List<Station> = emptyList(),
+    val tflRailSearchResults: List<TflRailStation> = emptyList(),
+    val isTflRailSearching: Boolean = false,
     val busSearchResults: List<BusStop> = emptyList(),
     val busSearchGroups: Map<String, List<BusStop>> = emptyMap(),
     val isBusSearching: Boolean = false,
@@ -41,7 +47,14 @@ data class CreateEditGroupUiState(
     val directionPickerStop: BusStop? = null,
     val directionOptions: List<BusStop> = emptyList(),
     val isLoadingDirections: Boolean = false,
-    val directionPickerHasAllOption: Boolean = true
+    val directionPickerHasAllOption: Boolean = true,
+    val tflOptionStation: TflRailStation? = null,
+    val tflOptionType: String = TransportType.TRAIN,
+    val tflOptionModes: List<String> = emptyList(),
+    val tflOptionLines: List<TflLine> = emptyList(),
+    val tflOptionDirections: List<TflDirection> = emptyList(),
+    val isLoadingTflOptions: Boolean = false,
+    val isLoadingTflDirections: Boolean = false
 )
 
 @HiltViewModel
@@ -58,6 +71,10 @@ class CreateEditGroupViewModel @Inject constructor(
         private const val TAG = "CreateEditGroupVM"
     }
     private var busSearchJob: Job? = null
+    private var tflRailSearchJob: Job? = null
+
+    private val trainTflModes = listOf("overground", "elizabeth-line")
+    private val tubeTflModes = listOf("tube", "dlr")
 
     private val _uiState = MutableStateFlow(CreateEditGroupUiState())
     val uiState: StateFlow<CreateEditGroupUiState> = _uiState.asStateFlow()
@@ -87,11 +104,14 @@ class CreateEditGroupViewModel @Inject constructor(
 
     fun onSearchModeChange(mode: String) {
         busSearchJob?.cancel()
+        tflRailSearchJob?.cancel()
         _uiState.update {
             it.copy(
                 searchMode = mode,
                 searchQuery = "",
                 searchResults = emptyList(),
+                tflRailSearchResults = emptyList(),
+                isTflRailSearching = false,
                 busSearchResults = emptyList(),
                 busSearchGroups = emptyMap(),
                 isBusSearching = false
@@ -100,15 +120,35 @@ class CreateEditGroupViewModel @Inject constructor(
     }
 
     fun onSearchQueryChange(query: String) {
-        if (_uiState.value.searchMode == TransportType.TRAIN) {
-            _uiState.update {
-                it.copy(
-                    searchQuery = query,
-                    searchResults = stationRepository.search(query)
-                )
+        when (_uiState.value.searchMode) {
+            TransportType.TRAIN -> {
+                _uiState.update {
+                    it.copy(
+                        searchQuery = query,
+                        searchResults = stationRepository.search(query),
+                        tflRailSearchResults = emptyList()
+                    )
+                }
+                searchTflRail(query, trainTflModes)
             }
-        } else {
-            _uiState.update { it.copy(searchQuery = query) }
+            TransportType.TUBE -> {
+                _uiState.update {
+                    it.copy(
+                        searchQuery = query,
+                        searchResults = emptyList(),
+                        tflRailSearchResults = emptyList()
+                    )
+                }
+                searchTflRail(query, tubeTflModes)
+            }
+            else -> {
+                _uiState.update { it.copy(searchQuery = query) }
+                searchBusStops(query)
+            }
+        }
+    }
+
+    private fun searchBusStops(query: String) {
             busSearchJob?.cancel()
             if (query.length < 2) {
                 _uiState.update { it.copy(busSearchResults = emptyList(), isBusSearching = false) }
@@ -131,6 +171,25 @@ class CreateEditGroupViewModel @Inject constructor(
                     _uiState.update { it.copy(busSearchResults = emptyList(), busSearchGroups = emptyMap(), isBusSearching = false) }
                 }
             }
+    }
+
+    private fun searchTflRail(query: String, modes: List<String>) {
+        tflRailSearchJob?.cancel()
+        if (query.length < 2) {
+            _uiState.update { it.copy(tflRailSearchResults = emptyList(), isTflRailSearching = false) }
+            return
+        }
+        tflRailSearchJob = viewModelScope.launch {
+            _uiState.update { it.copy(isTflRailSearching = true) }
+            try {
+                val results = tflApiClient.searchRailStations(query, modes)
+                _uiState.update {
+                    it.copy(tflRailSearchResults = results, isTflRailSearching = false)
+                }
+            } catch (e: Exception) {
+                if (BuildConfig.DEBUG) Log.w(TAG, "tflRailSearch: query='$query' failed: ${e.message}")
+                _uiState.update { it.copy(tflRailSearchResults = emptyList(), isTflRailSearching = false) }
+            }
         }
     }
 
@@ -150,6 +209,97 @@ class CreateEditGroupViewModel @Inject constructor(
                 stations = it.stations + newEntry,
                 searchQuery = "",
                 searchResults = emptyList()
+            )
+        }
+    }
+
+    fun selectTflRailStation(station: TflRailStation) {
+        val displayType = if (_uiState.value.searchMode == TransportType.TUBE) TransportType.TUBE else TransportType.TRAIN
+        val modes = if (displayType == TransportType.TUBE) tubeTflModes else trainTflModes
+        _uiState.update {
+            it.copy(
+                tflOptionStation = station,
+                tflOptionType = displayType,
+                tflOptionModes = modes,
+                tflOptionLines = station.lines,
+                tflOptionDirections = emptyList(),
+                isLoadingTflOptions = true,
+                searchQuery = "",
+                searchResults = emptyList(),
+                tflRailSearchResults = emptyList()
+            )
+        }
+        viewModelScope.launch {
+            val enriched = try {
+                tflApiClient.getRailStation(station.id, modes)
+            } catch (_: Exception) {
+                station
+            }
+            _uiState.update {
+                it.copy(
+                    tflOptionStation = enriched,
+                    tflOptionLines = enriched.lines,
+                    isLoadingTflOptions = false
+                )
+            }
+            loadTflDirections(null)
+        }
+    }
+
+    fun loadTflDirections(line: TflLine?) {
+        val station = _uiState.value.tflOptionStation ?: return
+        val arrivalStopIds = line?.stopIds?.takeIf { ids -> ids.isNotEmpty() }
+            ?: station.arrivalStopIds.takeIf { ids -> ids.isNotEmpty() }
+            ?: listOf(station.id)
+        _uiState.update { it.copy(isLoadingTflDirections = true, tflOptionDirections = emptyList()) }
+        viewModelScope.launch {
+            val directions = try {
+                tflApiClient.getRailDirections(arrivalStopIds.joinToString(","), line?.id)
+            } catch (_: Exception) {
+                emptyList()
+            }
+            _uiState.update { it.copy(tflOptionDirections = directions, isLoadingTflDirections = false) }
+        }
+    }
+
+    fun addTflRailStation(line: TflLine?, direction: TflDirection?) {
+        val station = _uiState.value.tflOptionStation ?: return
+        _uiState.update {
+            val arrivalStopIds = line?.stopIds?.takeIf { ids -> ids.isNotEmpty() }
+                ?: station.arrivalStopIds.takeIf { ids -> ids.isNotEmpty() }
+                ?: listOf(station.id)
+            val newEntry = StationEntry(
+                groupId = groupId ?: 0L,
+                stationName = station.name,
+                crsCode = arrivalStopIds.joinToString(","),
+                displayOrder = it.stations.size,
+                filterCrs = line?.id,
+                filterName = line?.name,
+                type = it.tflOptionType,
+                dataSource = TransportDataSource.TFL,
+                tflMode = line?.mode ?: station.modes.firstOrNull(),
+                direction = direction?.id,
+                directionName = direction?.label
+            )
+            it.copy(
+                stations = it.stations + newEntry,
+                tflOptionStation = null,
+                tflOptionLines = emptyList(),
+                tflOptionDirections = emptyList(),
+                isLoadingTflOptions = false,
+                isLoadingTflDirections = false
+            )
+        }
+    }
+
+    fun dismissTflRailOptions() {
+        _uiState.update {
+            it.copy(
+                tflOptionStation = null,
+                tflOptionLines = emptyList(),
+                tflOptionDirections = emptyList(),
+                isLoadingTflOptions = false,
+                isLoadingTflDirections = false
             )
         }
     }
@@ -240,7 +390,8 @@ class CreateEditGroupViewModel @Inject constructor(
                 stationName = name,
                 crsCode = naptanId,
                 displayOrder = it.stations.size,
-                type = TransportType.BUS
+                type = TransportType.BUS,
+                dataSource = TransportDataSource.TFL
             )
             it.copy(
                 stations = it.stations + newEntry,
@@ -312,7 +463,7 @@ class CreateEditGroupViewModel @Inject constructor(
     fun clearDestination(index: Int) {
         _uiState.update {
             it.copy(stations = it.stations.mapIndexed { i, s ->
-                if (i == index) s.copy(filterCrs = null, filterName = null)
+                if (i == index) s.copy(filterCrs = null, filterName = null, direction = null, directionName = null)
                 else s
             })
         }

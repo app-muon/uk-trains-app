@@ -10,7 +10,7 @@ import com.example.transport_app.data.model.StationEntry
 
 @Database(
     entities = [Group::class, StationEntry::class, CachedDeparture::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -52,6 +52,17 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE station_entries ADD COLUMN type TEXT NOT NULL DEFAULT 'train'")
                 db.execSQL("ALTER TABLE cached_departures ADD COLUMN type TEXT NOT NULL DEFAULT 'train'")
                 db.execSQL("ALTER TABLE cached_departures ADD COLUMN routeNumber TEXT DEFAULT NULL")
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE station_entries ADD COLUMN dataSource TEXT NOT NULL DEFAULT 'darwin'")
+                db.execSQL("ALTER TABLE station_entries ADD COLUMN tflMode TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE station_entries ADD COLUMN direction TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE station_entries ADD COLUMN directionName TEXT DEFAULT NULL")
+                db.execSQL("UPDATE station_entries SET dataSource = 'tfl' WHERE type = 'bus'")
+                db.execSQL("ALTER TABLE cached_departures ADD COLUMN direction TEXT DEFAULT NULL")
             }
         }
     }

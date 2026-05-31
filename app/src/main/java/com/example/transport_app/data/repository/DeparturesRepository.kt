@@ -6,6 +6,7 @@ import com.example.transport_app.data.db.CachedDepartureDao
 import com.example.transport_app.data.model.CachedDeparture
 import com.example.transport_app.data.model.Departure
 import com.example.transport_app.data.model.StationEntry
+import com.example.transport_app.data.model.TransportDataSource
 import com.example.transport_app.data.model.TransportType
 import com.example.transport_app.data.network.DarwinSoapClient
 import com.example.transport_app.data.network.TflApiClient
@@ -43,16 +44,25 @@ class DeparturesRepository @Inject constructor(
             Log.w("DeparturesRepository", "Cache eviction failed", e)
         }
 
-        val trainStations = stations.filter { it.type == TransportType.TRAIN }
+        val trainStations = stations.filter {
+            it.type == TransportType.TRAIN && it.dataSource == TransportDataSource.DARWIN
+        }
         val busStops = stations.filter { it.type == TransportType.BUS }
+        val tflRailStops = stations.filter {
+            it.dataSource == TransportDataSource.TFL && it.type != TransportType.BUS
+        }
 
         val trainResults = fetchTrains(trainStations, groupId, timeOffset)
         val busResults = fetchBuses(busStops, groupId)
+        val tflRailResults = fetchTflRail(tflRailStops, groupId)
 
         // Reassemble in original order
         val trainMap = trainStations.zip(trainResults).toMap()
         val busMap = busStops.zip(busResults).toMap()
-        return stations.map { trainMap[it] ?: busMap[it] ?: StationResult.Error(it.crsCode, "Unknown type") }
+        val tflRailMap = tflRailStops.zip(tflRailResults).toMap()
+        return stations.map {
+            trainMap[it] ?: busMap[it] ?: tflRailMap[it] ?: StationResult.Error(it.crsCode, "Unknown type")
+        }
     }
 
     private suspend fun fetchTrains(
@@ -121,6 +131,35 @@ class DeparturesRepository @Inject constructor(
         fallbackToCache(station, groupId, e)
     }
 
+    private suspend fun fetchTflRail(
+        stations: List<StationEntry>,
+        groupId: Long
+    ): List<StationResult> {
+        if (stations.isEmpty()) return emptyList()
+        return coroutineScope {
+            stations.map { station ->
+                async { fetchSingleTflRail(station, groupId) }
+            }.map { it.await() }
+        }
+    }
+
+    private suspend fun fetchSingleTflRail(
+        station: StationEntry,
+        groupId: Long
+    ): StationResult = try {
+        val departures = tflApiClient.getRailArrivals(
+            stationId = station.crsCode,
+            transportType = station.type,
+            lineId = station.filterCrs,
+            direction = station.direction
+        )
+        cacheResults(departures, groupId, station)
+        StationResult.Success(departures)
+    } catch (e: Exception) {
+        Log.e("DeparturesRepository", "Error fetching TfL rail ${station.crsCode}", e)
+        fallbackToCache(station, groupId, e)
+    }
+
     private suspend fun cacheResults(
         departures: List<Departure>,
         groupId: Long,
@@ -129,9 +168,9 @@ class DeparturesRepository @Inject constructor(
         try {
             val now = System.currentTimeMillis()
             val cached = departures.map {
-                CachedDeparture.from(it, groupId, station.crsCode, station.filterCrs, now)
+                CachedDeparture.from(it, groupId, station.crsCode, station.filterCrs, station.direction, now)
             }
-            cachedDepartureDao.replaceForStation(groupId, station.crsCode, station.filterCrs, cached)
+            cachedDepartureDao.replaceForStation(groupId, station.crsCode, station.filterCrs, station.direction, cached)
         } catch (cacheEx: Exception) {
             Log.e("DeparturesRepository", "Failed to cache ${station.crsCode}", cacheEx)
         }
@@ -142,7 +181,7 @@ class DeparturesRepository @Inject constructor(
         groupId: Long,
         originalError: Exception
     ): StationResult = try {
-        val cached = cachedDepartureDao.getByStation(groupId, station.crsCode, station.filterCrs)
+        val cached = cachedDepartureDao.getByStation(groupId, station.crsCode, station.filterCrs, station.direction)
         if (cached.isNotEmpty()) {
             val nowMinutes = Calendar.getInstance().let {
                 it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE)

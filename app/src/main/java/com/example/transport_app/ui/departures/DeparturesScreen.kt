@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.DirectionsBus
+import androidx.compose.material.icons.outlined.DirectionsSubway
 import androidx.compose.material.icons.outlined.Train
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,11 +46,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.transport_app.data.model.Departure
+import com.example.transport_app.data.model.TransportDataSource
 import com.example.transport_app.data.model.TransportType
 import com.example.transport_app.ui.theme.BusHeaderBg
 import com.example.transport_app.ui.theme.BusHeaderFg
 import com.example.transport_app.ui.theme.StatusGreen
 import com.example.transport_app.ui.theme.StatusOrange
+import com.example.transport_app.ui.theme.TubeHeaderBg
+import com.example.transport_app.ui.theme.TubeHeaderFg
 import com.example.transport_app.ui.theme.TrainHeaderBg
 import com.example.transport_app.ui.theme.TrainHeaderFg
 import kotlinx.coroutines.delay
@@ -216,6 +220,12 @@ fun DeparturesScreen(
                         )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     }
+                } else if (section.dataSource == TransportDataSource.TFL) {
+                    item { TflRailDepartureHeader() }
+                    items(section.departures) { departure ->
+                        TflRailDepartureRow(departure)
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    }
                 } else {
                     item { DepartureHeader() }
                     items(section.departures) { departure ->
@@ -226,7 +236,7 @@ fun DeparturesScreen(
             }
 
             // More times button (only for train sections — bus arrivals don't support time offset)
-            if (uiState.sections.any { it.type == TransportType.TRAIN }) {
+            if (uiState.sections.any { it.type == TransportType.TRAIN && it.dataSource == TransportDataSource.DARWIN }) {
                 item {
                     Box(
                         modifier = Modifier
@@ -279,10 +289,21 @@ private fun BusStopCodeRow(naptanId: String) {
 
 @Composable
 private fun StationHeader(name: String, type: String) {
-    val isBus = type == TransportType.BUS
-    val bg = if (isBus) BusHeaderBg else TrainHeaderBg
-    val fg = if (isBus) BusHeaderFg else TrainHeaderFg
-    val icon = if (isBus) Icons.Outlined.DirectionsBus else Icons.Outlined.Train
+    val bg = when (type) {
+        TransportType.BUS -> BusHeaderBg
+        TransportType.TUBE -> TubeHeaderBg
+        else -> TrainHeaderBg
+    }
+    val fg = when (type) {
+        TransportType.BUS -> BusHeaderFg
+        TransportType.TUBE -> TubeHeaderFg
+        else -> TrainHeaderFg
+    }
+    val icon = when (type) {
+        TransportType.BUS -> Icons.Outlined.DirectionsBus
+        TransportType.TUBE -> Icons.Outlined.DirectionsSubway
+        else -> Icons.Outlined.Train
+    }
 
     Surface(color = bg, modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -333,6 +354,25 @@ private fun BusDepartureHeader() {
 }
 
 @Composable
+private fun TflRailDepartureHeader() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text("Line", style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.weight(0.2f), fontWeight = FontWeight.Bold)
+        Text("Destination", style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.weight(0.4f), fontWeight = FontWeight.Bold)
+        Text("Plat", style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.weight(0.15f), fontWeight = FontWeight.Bold)
+        Text("Due", style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.weight(0.25f), fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
 private fun BusDepartureRow(departure: Departure, onClick: (() -> Unit)?) {
     Row(
         modifier = Modifier
@@ -356,6 +396,40 @@ private fun BusDepartureRow(departure: Departure, onClick: (() -> Unit)?) {
         Text(
             departure.estimatedTime,
             modifier = Modifier.weight(0.3f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (departure.estimatedTime == "Due") StatusGreen else StatusOrange
+        )
+    }
+}
+
+@Composable
+private fun TflRailDepartureRow(departure: Departure) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            departure.routeNumber ?: "",
+            modifier = Modifier.weight(0.2f),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            departure.destination,
+            modifier = Modifier.weight(0.4f),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            departure.platform ?: "-",
+            modifier = Modifier.weight(0.15f),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            departure.estimatedTime,
+            modifier = Modifier.weight(0.25f),
             style = MaterialTheme.typography.bodyMedium,
             color = if (departure.estimatedTime == "Due") StatusGreen else StatusOrange
         )

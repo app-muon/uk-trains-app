@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.DirectionsBus
+import androidx.compose.material.icons.outlined.DirectionsSubway
 import androidx.compose.material.icons.outlined.Train
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -56,6 +57,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.transport_app.data.model.BusStop
 import com.example.transport_app.data.model.Station
 import com.example.transport_app.data.model.StationEntry
+import com.example.transport_app.data.model.TflDirection
+import com.example.transport_app.data.model.TflLine
+import com.example.transport_app.data.model.TflRailStation
+import com.example.transport_app.data.model.TransportDataSource
 import com.example.transport_app.data.model.TransportType
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -157,6 +162,20 @@ fun CreateEditGroupScreen(
         }
     }
 
+    uiState.tflOptionStation?.let { station ->
+        TflRailOptionsDialog(
+            station = station,
+            displayType = uiState.tflOptionType,
+            lines = uiState.tflOptionLines,
+            directions = uiState.tflOptionDirections,
+            isLoadingOptions = uiState.isLoadingTflOptions,
+            isLoadingDirections = uiState.isLoadingTflDirections,
+            onLineChange = viewModel::loadTflDirections,
+            onConfirm = viewModel::addTflRailStation,
+            onDismiss = viewModel::dismissTflRailOptions
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -209,34 +228,52 @@ fun CreateEditGroupScreen(
                     SegmentedButton(
                         selected = uiState.searchMode == TransportType.TRAIN,
                         onClick = { viewModel.onSearchModeChange(TransportType.TRAIN) },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3),
                         icon = { Icon(Icons.Outlined.Train, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     ) { Text("Trains") }
                     SegmentedButton(
                         selected = uiState.searchMode == TransportType.BUS,
                         onClick = { viewModel.onSearchModeChange(TransportType.BUS) },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3),
                         icon = { Icon(Icons.Outlined.DirectionsBus, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     ) { Text("Buses") }
+                    SegmentedButton(
+                        selected = uiState.searchMode == TransportType.TUBE,
+                        onClick = { viewModel.onSearchModeChange(TransportType.TUBE) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3),
+                        icon = { Icon(Icons.Outlined.DirectionsSubway, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    ) { Text("Tube") }
                 }
             }
 
             item {
-                if (uiState.searchMode == TransportType.TRAIN) {
-                    StationSearchField(
+                when (uiState.searchMode) {
+                    TransportType.TRAIN -> RailSearchField(
                         query = uiState.searchQuery,
                         onQueryChange = viewModel::onSearchQueryChange,
-                        results = uiState.searchResults.map { it.name to it.crs },
-                        onSelect = { name, crs -> viewModel.addStation(Station(name, crs)) },
-                        label = "Search stations"
+                        nationalResults = uiState.searchResults,
+                        tflResults = uiState.tflRailSearchResults,
+                        isSearchingTfl = uiState.isTflRailSearching,
+                        label = "Search stations",
+                        onSelectNational = viewModel::addStation,
+                        onSelectTfl = viewModel::selectTflRailStation
                     )
-                } else {
-                    BusStopSearchField(
+                    TransportType.BUS -> BusStopSearchField(
                         query = uiState.searchQuery,
                         onQueryChange = viewModel::onSearchQueryChange,
                         results = uiState.busSearchResults,
                         isSearching = uiState.isBusSearching,
                         onSelect = { viewModel.addBusStop(it) }
+                    )
+                    TransportType.TUBE -> RailSearchField(
+                        query = uiState.searchQuery,
+                        onQueryChange = viewModel::onSearchQueryChange,
+                        nationalResults = emptyList(),
+                        tflResults = uiState.tflRailSearchResults,
+                        isSearchingTfl = uiState.isTflRailSearching,
+                        label = "Search Tube or DLR stations",
+                        onSelectNational = viewModel::addStation,
+                        onSelectTfl = viewModel::selectTflRailStation
                     )
                 }
             }
@@ -244,7 +281,7 @@ fun CreateEditGroupScreen(
             if (uiState.stations.isEmpty()) {
                 item {
                     Text(
-                        "Add train stations or bus stops to build your departure board.",
+                        "Add stations or stops to build your departure board.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)
@@ -267,7 +304,7 @@ fun CreateEditGroupScreen(
                     onSetDestination = {
                         if (station.type == TransportType.BUS) {
                             routeFilterTargetIndex = index
-                        } else {
+                        } else if (station.dataSource == TransportDataSource.DARWIN) {
                             destinationTargetIndex = index
                         }
                     },
@@ -360,6 +397,82 @@ private fun StationSearchField(
 }
 
 @Composable
+private fun RailSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    nationalResults: List<Station>,
+    tflResults: List<TflRailStation>,
+    isSearchingTfl: Boolean,
+    label: String,
+    onSelectNational: (Station) -> Unit,
+    onSelectTfl: (TflRailStation) -> Unit
+) {
+    val focusRequester = remember { FocusRequester() }
+
+    Column {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            label = { Text(label) },
+            singleLine = true,
+            trailingIcon = {
+                if (isSearchingTfl) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(Icons.Default.Clear, contentDescription = "Clear")
+                    }
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+        )
+
+        val hasResults = nationalResults.isNotEmpty() || tflResults.isNotEmpty()
+        if (hasResults) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                nationalResults.forEach { station ->
+                    Text(
+                        "${station.name} (${station.crs})",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onSelectNational(station)
+                                focusRequester.requestFocus()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    HorizontalDivider()
+                }
+                tflResults.forEach { station ->
+                    val modes = station.modes.joinToString(", ") { mode -> tflModeLabel(mode) }
+                    val suffix = if (modes.isBlank()) "" else " - $modes"
+                    Text(
+                        "${station.name}$suffix",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onSelectTfl(station)
+                                focusRequester.requestFocus()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun BusStopSearchField(
     query: String,
     onQueryChange: (String) -> Unit,
@@ -415,6 +528,125 @@ private fun BusStopSearchField(
             }
         }
     }
+}
+
+@Composable
+private fun TflRailOptionsDialog(
+    station: TflRailStation,
+    displayType: String,
+    lines: List<TflLine>,
+    directions: List<TflDirection>,
+    isLoadingOptions: Boolean,
+    isLoadingDirections: Boolean,
+    onLineChange: (TflLine?) -> Unit,
+    onConfirm: (TflLine?, TflDirection?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedLine by remember(station.id) { mutableStateOf<TflLine?>(null) }
+    var selectedDirection by remember(station.id) { mutableStateOf<TflDirection?>(null) }
+    val modeLabel = if (displayType == TransportType.TUBE) "Tube" else "train"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add $modeLabel station") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    station.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (isLoadingOptions) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                }
+
+                Text(
+                    "Line",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                )
+                OptionRow(
+                    label = "All lines",
+                    selected = selectedLine == null,
+                    onClick = {
+                        selectedLine = null
+                        selectedDirection = null
+                        onLineChange(null)
+                    }
+                )
+                lines.forEach { line ->
+                    OptionRow(
+                        label = line.name,
+                        selected = selectedLine?.id == line.id,
+                        onClick = {
+                            selectedLine = line
+                            selectedDirection = null
+                            onLineChange(line)
+                        }
+                    )
+                }
+
+                Text(
+                    "Direction",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                )
+                OptionRow(
+                    label = "All directions",
+                    selected = selectedDirection == null,
+                    onClick = { selectedDirection = null }
+                )
+                if (isLoadingDirections) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                } else {
+                    directions.forEach { direction ->
+                        OptionRow(
+                            label = direction.label,
+                            selected = selectedDirection?.id == direction.id,
+                            onClick = { selectedDirection = direction }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selectedLine, selectedDirection) }) {
+                Text("Add")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun OptionRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+        style = MaterialTheme.typography.bodyMedium,
+        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+    )
+    HorizontalDivider()
 }
 
 @Composable
@@ -484,6 +716,14 @@ private fun RouteFilterDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
+}
+
+private fun tflModeLabel(mode: String): String = when (mode) {
+    "tube" -> "Underground"
+    "dlr" -> "DLR"
+    "overground" -> "Overground"
+    "elizabeth-line" -> "Elizabeth line"
+    else -> mode
 }
 
 @Composable
@@ -608,6 +848,8 @@ private fun StationRow(
     onClearDestination: () -> Unit
 ) {
     val isBus = station.type == TransportType.BUS
+    val isTube = station.type == TransportType.TUBE
+    val isTflRail = station.dataSource == TransportDataSource.TFL && !isBus
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
@@ -620,25 +862,43 @@ private fun StationRow(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        if (isBus) Icons.Outlined.DirectionsBus else Icons.Outlined.Train,
-                        contentDescription = if (isBus) "Bus" else "Train",
+                        when {
+                            isBus -> Icons.Outlined.DirectionsBus
+                            isTube -> Icons.Outlined.DirectionsSubway
+                            else -> Icons.Outlined.Train
+                        },
+                        contentDescription = when {
+                            isBus -> "Bus"
+                            isTube -> "Tube"
+                            else -> "Train"
+                        },
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(station.stationName, style = MaterialTheme.typography.bodyLarge)
                 }
-                if (!isBus) {
+                if (!isBus && !isTflRail) {
                     Text(
                         station.crsCode,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                if (station.filterName != null) {
+                val filterText = when {
+                    isTflRail && station.filterName != null && station.directionName != null ->
+                        "${station.filterName}, ${station.directionName}"
+                    isTflRail && station.filterName != null -> station.filterName
+                    isTflRail && station.directionName != null -> station.directionName
+                    else -> station.filterName
+                }
+                if (filterText != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            if (isBus) station.filterName!! else "\u2192 ${station.filterName}",
+                            when {
+                                isBus || isTflRail -> filterText
+                                else -> "\u2192 $filterText"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -653,12 +913,20 @@ private fun StationRow(
                     }
                 } else {
                     Text(
-                        if (isBus) "Filter by route" else "Add destination",
+                        when {
+                            isBus -> "Filter by route"
+                            isTflRail -> "All lines and directions"
+                            else -> "Add destination"
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .clickable { onSetDestination() }
-                            .padding(vertical = 2.dp)
+                        color = if (isTflRail) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+                        modifier = if (isTflRail) {
+                            Modifier.padding(vertical = 2.dp)
+                        } else {
+                            Modifier
+                                .clickable { onSetDestination() }
+                                .padding(vertical = 2.dp)
+                        }
                     )
                 }
             }
