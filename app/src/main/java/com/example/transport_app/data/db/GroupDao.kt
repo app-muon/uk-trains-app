@@ -33,6 +33,9 @@ interface GroupDao {
     @Update
     suspend fun update(group: Group)
 
+    @Query("UPDATE station_groups SET displayOrder = :displayOrder WHERE id = :id")
+    suspend fun updateDisplayOrder(id: Long, displayOrder: Int)
+
     @Delete
     suspend fun delete(group: Group)
 }

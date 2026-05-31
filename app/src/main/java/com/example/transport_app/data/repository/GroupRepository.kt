@@ -37,6 +37,14 @@ class GroupRepository @Inject constructor(
         groupDao.update(group.copy(name = newName))
     }
 
+    suspend fun reorderGroups(groupIds: List<Long>) {
+        db.withTransaction {
+            groupIds.forEachIndexed { index, id ->
+                groupDao.updateDisplayOrder(id, index)
+            }
+        }
+    }
+
     suspend fun deleteGroup(id: Long) {
         val group = groupDao.getById(id) ?: return
         cachedDepartureDao.deleteByGroup(id)

@@ -475,6 +475,20 @@ class CreateEditGroupViewModel @Inject constructor(
         }
     }
 
+    fun moveStation(fromIndex: Int, toIndex: Int) {
+        _uiState.update {
+            if (fromIndex == toIndex || fromIndex !in it.stations.indices || toIndex !in it.stations.indices) {
+                it
+            } else {
+                it.copy(
+                    stations = it.stations.toMutableList().apply {
+                        add(toIndex, removeAt(fromIndex))
+                    }
+                )
+            }
+        }
+    }
+
     fun deleteGroup() {
         if (groupId == null) return
         viewModelScope.launch {

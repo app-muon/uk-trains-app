@@ -1,6 +1,7 @@
 package com.example.transport_app.ui.groups
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.outlined.DirectionsBus
 import androidx.compose.material.icons.outlined.DirectionsSubway
 import androidx.compose.material.icons.outlined.Train
@@ -52,7 +54,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.transport_app.data.model.BusStop
 import com.example.transport_app.data.model.Station
@@ -62,6 +69,7 @@ import com.example.transport_app.data.model.TflLine
 import com.example.transport_app.data.model.TflRailStation
 import com.example.transport_app.data.model.TransportDataSource
 import com.example.transport_app.data.model.TransportType
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,6 +82,13 @@ fun CreateEditGroupScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var destinationTargetIndex by remember { mutableStateOf<Int?>(null) }
     var routeFilterTargetIndex by remember { mutableStateOf<Int?>(null) }
+    var draggedStationKey by remember { mutableStateOf<String?>(null) }
+    var dragStartIndex by remember { mutableStateOf<Int?>(null) }
+    var dragTargetIndex by remember { mutableStateOf<Int?>(null) }
+    var draggedStationOffset by remember { mutableStateOf(0f) }
+    var stationItemStepPx by remember { mutableStateOf(0f) }
+    val density = LocalDensity.current
+    val fallbackStationStepPx = with(density) { 72.dp.toPx() }
 
     var wantsView by remember { mutableStateOf(false) }
 
@@ -297,10 +312,48 @@ fun CreateEditGroupScreen(
                 }
             }
 
-            itemsIndexed(uiState.stations, key = { index, s -> "$index-${s.type}-${s.crsCode}-${s.filterCrs}" }) { index, station ->
+            itemsIndexed(uiState.stations, key = { index, s -> stationEntryKey(index, s) }) { index, station ->
+                val stationKey = stationEntryKey(index, station)
                 StationRow(
                     station = station,
+                    index = index,
+                    itemCount = uiState.stations.size,
+                    visualOffset = stationVisualOffset(
+                        index = index,
+                        stationKey = stationKey,
+                        draggedStationKey = draggedStationKey,
+                        dragStartIndex = dragStartIndex,
+                        dragTargetIndex = dragTargetIndex,
+                        draggedOffset = draggedStationOffset,
+                        itemStepPx = stationItemStepPx.takeIf { it > 0f } ?: fallbackStationStepPx
+                    ),
+                    isDragging = draggedStationKey == stationKey,
                     onRemove = { viewModel.removeStation(index) },
+                    onItemStepMeasured = { stationItemStepPx = it },
+                    onDragStart = {
+                        draggedStationKey = stationKey
+                        dragStartIndex = index
+                        dragTargetIndex = index
+                        draggedStationOffset = 0f
+                    },
+                    onDragOffset = { offset ->
+                        draggedStationOffset = offset
+                        val start = dragStartIndex ?: index
+                        val step = stationItemStepPx.takeIf { it > 0f } ?: fallbackStationStepPx
+                        dragTargetIndex = (start + (offset / step).roundToInt())
+                            .coerceIn(0, uiState.stations.lastIndex)
+                    },
+                    onDragEnd = {
+                        val from = dragStartIndex
+                        val to = dragTargetIndex
+                        if (from != null && to != null && from != to) {
+                            viewModel.moveStation(from, to)
+                        }
+                        draggedStationKey = null
+                        dragStartIndex = null
+                        dragTargetIndex = null
+                        draggedStationOffset = 0f
+                    },
                     onSetDestination = {
                         if (station.type == TransportType.BUS) {
                             routeFilterTargetIndex = index
@@ -843,14 +896,36 @@ private fun DestinationSearchDialog(
 @Composable
 private fun StationRow(
     station: StationEntry,
+    index: Int,
+    itemCount: Int,
+    visualOffset: Float,
+    isDragging: Boolean,
     onRemove: () -> Unit,
+    onItemStepMeasured: (Float) -> Unit,
+    onDragStart: () -> Unit,
+    onDragOffset: (Float) -> Unit,
+    onDragEnd: () -> Unit,
     onSetDestination: () -> Unit,
     onClearDestination: () -> Unit
 ) {
     val isBus = station.type == TransportType.BUS
     val isTube = station.type == TransportType.TUBE
     val isTflRail = station.dataSource == TransportDataSource.TFL && !isBus
+    val density = LocalDensity.current
+    val itemSpacingPx = with(density) { 12.dp.toPx() }
+
     Card(
+        modifier = Modifier
+            .onSizeChanged { onItemStepMeasured(it.height.toFloat() + itemSpacingPx) }
+            .zIndex(if (isDragging) 1f else 0f)
+            .graphicsLayer {
+                translationY = visualOffset
+                scaleX = if (isDragging) 1.02f else 1f
+                scaleY = if (isDragging) 1.02f else 1f
+            }
+            .padding(horizontal = if (isDragging) 2.dp else 0.dp)
+            .padding(vertical = if (isDragging) 2.dp else 0.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDragging) 10.dp else 1.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Row(
@@ -859,6 +934,13 @@ private fun StationRow(
                 .padding(start = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            ReorderHandle(
+                index = index,
+                itemCount = itemCount,
+                onDragStart = onDragStart,
+                onDragOffset = onDragOffset,
+                onDragEnd = onDragEnd
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -938,4 +1020,75 @@ private fun StationRow(
             }
         }
     }
+}
+
+private fun stationEntryKey(index: Int, station: StationEntry): String {
+    if (station.id != 0L) return "saved-${station.id}"
+    return listOf(
+        "new",
+        station.displayOrder,
+        station.type,
+        station.crsCode,
+        station.filterCrs.orEmpty(),
+        station.direction.orEmpty()
+    ).joinToString(":")
+}
+
+private fun stationVisualOffset(
+    index: Int,
+    stationKey: String,
+    draggedStationKey: String?,
+    dragStartIndex: Int?,
+    dragTargetIndex: Int?,
+    draggedOffset: Float,
+    itemStepPx: Float
+): Float {
+    val start = dragStartIndex ?: return 0f
+    val target = dragTargetIndex ?: return 0f
+    if (stationKey == draggedStationKey) return draggedOffset
+    return when {
+        target > start && index in (start + 1)..target -> -itemStepPx
+        target < start && index in target until start -> itemStepPx
+        else -> 0f
+    }
+}
+
+@Composable
+private fun ReorderHandle(
+    index: Int,
+    itemCount: Int,
+    onDragStart: () -> Unit,
+    onDragOffset: (Float) -> Unit,
+    onDragEnd: () -> Unit
+) {
+    Icon(
+        Icons.Default.DragHandle,
+        contentDescription = "Drag to reorder",
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .size(40.dp)
+            .padding(end = 8.dp)
+            .pointerInput(index, itemCount) {
+                var totalDrag = 0f
+                detectDragGesturesAfterLongPress(
+                    onDragStart = {
+                        totalDrag = 0f
+                        onDragStart()
+                    },
+                    onDragEnd = {
+                        totalDrag = 0f
+                        onDragEnd()
+                    },
+                    onDragCancel = {
+                        totalDrag = 0f
+                        onDragEnd()
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        totalDrag += dragAmount.y
+                        onDragOffset(totalDrag)
+                    }
+                )
+            }
+    )
 }
